@@ -30,14 +30,14 @@ export function WorkflowSelector({ onSelectWorkflow, onSelectCanvasWorkflow, onC
   const [showViewModeDialog, setShowViewModeDialog] = useState(false)
 
   const loadCanvasWorkflows = useCallback(() => {
-    console.log("[v0] ===== LOADING CANVAS WORKFLOWS =====")
+    console.log("===== LOADING CANVAS WORKFLOWS =====")
     const savedCanvas = localStorage.getItem("workflow-canvas")
-    console.log("[v0] Raw localStorage data:", savedCanvas ? "exists" : "not found")
+    console.log("Raw localStorage data:", savedCanvas ? "exists" : "not found")
 
     if (savedCanvas) {
       try {
         const { nodes, connections } = JSON.parse(savedCanvas)
-        console.log("[v0] Parsed canvas data:", {
+        console.log("Parsed canvas data:", {
           nodes: nodes?.length || 0,
           connections: connections?.length || 0,
         })
@@ -45,29 +45,29 @@ export function WorkflowSelector({ onSelectWorkflow, onSelectCanvasWorkflow, onC
         // Build workflow chain from connections
         if (connections && connections.length > 0) {
           const workflowChain = buildWorkflowChain(nodes, connections)
-          console.log("[v0] Built workflow chain:", workflowChain)
+          console.log("Built workflow chain:", workflowChain)
           setCanvasWorkflows(workflowChain)
-          console.log("[v0] ✓ Canvas workflows loaded successfully")
+          console.log("✓ Canvas workflows loaded successfully")
         } else {
-          console.log("[v0] No connections found in canvas")
+          console.log("No connections found in canvas")
           setCanvasWorkflows([])
         }
       } catch (error) {
-        console.error("[v0] Error loading canvas workflows:", error)
+        console.error("Error loading canvas workflows:", error)
         setCanvasWorkflows([])
       }
     } else {
-      console.log("[v0] No saved canvas found")
+      console.log("No saved canvas found")
       setCanvasWorkflows([])
     }
-    console.log("[v0] ===== CANVAS LOADING COMPLETED =====")
+    console.log("===== CANVAS LOADING COMPLETED =====")
   }, [])
 
   useEffect(() => {
-    console.log("[v0] WorkflowSelector mounted")
+    console.log("WorkflowSelector mounted")
     initializeDefaultWorkflow()
     const activeWorkflows = workflowStorage.getActive()
-    console.log("[v0] Active workflows:", activeWorkflows.length)
+    console.log("Active workflows:", activeWorkflows.length)
     setWorkflows(activeWorkflows)
 
     loadCanvasWorkflows()
@@ -80,38 +80,38 @@ export function WorkflowSelector({ onSelectWorkflow, onSelectCanvasWorkflow, onC
 
   useEffect(() => {
     const handleCanvasSaved = (event: Event) => {
-      console.log("[v0] Received canvas-saved event:", (event as CustomEvent).detail)
-      console.log("[v0] Reloading canvas workflows...")
+      console.log("Received canvas-saved event:", (event as CustomEvent).detail)
+      console.log("Reloading canvas workflows...")
       loadCanvasWorkflows()
     }
 
     window.addEventListener("workflow-canvas-saved", handleCanvasSaved)
-    console.log("[v0] Listening for canvas-saved events")
+    console.log("Listening for canvas-saved events")
 
     return () => {
       window.removeEventListener("workflow-canvas-saved", handleCanvasSaved)
-      console.log("[v0] Stopped listening for canvas-saved events")
+      console.log("Stopped listening for canvas-saved events")
     }
   }, [loadCanvasWorkflows])
 
   const buildWorkflowChain = (nodes: any[], connections: any[]): string[] => {
     if (!connections || connections.length === 0) {
-      console.log("[v0] buildWorkflowChain: No connections")
+      console.log("buildWorkflowChain: No connections")
       return []
     }
 
-    console.log("[v0] buildWorkflowChain: Building chain from", connections.length, "connections")
+    console.log("buildWorkflowChain: Building chain from", connections.length, "connections")
 
     // Find the starting node (node with no incoming connections)
     const targetIds = new Set(connections.map((c: any) => c.targetId))
     const startNode = nodes.find((n: any) => !targetIds.has(n.id))
 
     if (!startNode) {
-      console.log("[v0] buildWorkflowChain: No start node found")
+      console.log("buildWorkflowChain: No start node found")
       return []
     }
 
-    console.log("[v0] buildWorkflowChain: Start node:", startNode.workflow.name)
+    console.log("buildWorkflowChain: Start node:", startNode.workflow.name)
 
     // Build chain by following connections
     const chain: string[] = [startNode.workflowId]
@@ -120,22 +120,22 @@ export function WorkflowSelector({ onSelectWorkflow, onSelectCanvasWorkflow, onC
     while (true) {
       const nextConnection = connections.find((c: any) => c.sourceId === currentNodeId)
       if (!nextConnection) {
-        console.log("[v0] buildWorkflowChain: No more connections")
+        console.log("buildWorkflowChain: No more connections")
         break
       }
 
       const nextNode = nodes.find((n: any) => n.id === nextConnection.targetId)
       if (!nextNode) {
-        console.log("[v0] buildWorkflowChain: Next node not found")
+        console.log("buildWorkflowChain: Next node not found")
         break
       }
 
-      console.log("[v0] buildWorkflowChain: Adding node:", nextNode.workflow.name)
+      console.log("buildWorkflowChain: Adding node:", nextNode.workflow.name)
       chain.push(nextNode.workflowId)
       currentNodeId = nextNode.id
     }
 
-    console.log("[v0] buildWorkflowChain: Final chain length:", chain.length)
+    console.log("buildWorkflowChain: Final chain length:", chain.length)
     return chain
   }
 
@@ -147,10 +147,10 @@ export function WorkflowSelector({ onSelectWorkflow, onSelectCanvasWorkflow, onC
     setShowViewModeDialog(false)
 
     if (selectionMode === "canvas" && canvasWorkflows.length > 0) {
-      console.log("[v0] Using canvas workflow chain with view mode:", viewMode)
+      console.log("Using canvas workflow chain with view mode:", viewMode)
       onSelectCanvasWorkflow(canvasWorkflows, viewMode)
     } else if (selectionMode === "single" && selectedWorkflowId) {
-      console.log("[v0] Using single workflow with view mode:", viewMode)
+      console.log("Using single workflow with view mode:", viewMode)
       onSelectWorkflow(selectedWorkflowId, viewMode)
     }
   }

@@ -140,7 +140,7 @@ class StorageService {
     }
     this.saveCompany(simpleCompany)
 
-    console.log("[v0] Saved workflow company to localStorage:", company.id)
+    console.log("Saved workflow company to localStorage:", company.id)
   }
 
   deleteWorkflowCompany(companyId: string): void {

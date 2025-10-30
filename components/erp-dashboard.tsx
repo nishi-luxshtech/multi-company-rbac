@@ -52,7 +52,7 @@ export function ERPDashboard() {
 
       setRecentCompanies(companies.slice(0, 5))
     } catch (error: any) {
-      console.error("[v0] Failed to load dashboard data:", error)
+      console.error("Failed to load dashboard data:", error)
       if (error.message?.includes("permission")) {
         setError(error.message)
       } else {

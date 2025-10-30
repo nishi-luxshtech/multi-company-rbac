@@ -44,48 +44,48 @@ export function ERPCompanyDetailsPage({ companyId, onBack }: ERPCompanyDetailsPa
       setLoading(true)
       setError(null)
       const companyIdStr = companyId.toString()
-      console.log("[v0] Loading company details for ID:", companyIdStr)
+      console.log("Loading company details for ID:", companyIdStr)
 
       const workflowCompanies = storageService.getWorkflowCompanies()
       console.log(
-        "[v0] Available workflow companies:",
+        "Available workflow companies:",
         workflowCompanies.map((c) => c.id),
       )
 
       const workflowCompany = workflowCompanies.find((c) => c.id === companyIdStr)
 
       if (workflowCompany) {
-        console.log("[v0] Found workflow company:", workflowCompany)
-        console.log("[v0] Workflow company formData keys:", Object.keys(workflowCompany.formData))
+        console.log("Found workflow company:", workflowCompany)
+        console.log("Workflow company formData keys:", Object.keys(workflowCompany.formData))
 
         setWorkflowCompanyData(workflowCompany)
         setIsWorkflowCompany(true)
 
         const loadedWorkflow = workflowStorage.getById(workflowCompany.workflowId)
-        console.log("[v0] Loaded workflow:", loadedWorkflow ? loadedWorkflow.name : "not found")
+        console.log("Loaded workflow:", loadedWorkflow ? loadedWorkflow.name : "not found")
 
         if (loadedWorkflow) {
-          console.log("[v0] Workflow has", loadedWorkflow.steps.length, "steps")
-          console.log("[v0] First step fields:", loadedWorkflow.steps[0]?.fields?.length || 0)
+          console.log("Workflow has", loadedWorkflow.steps.length, "steps")
+          console.log("First step fields:", loadedWorkflow.steps[0]?.fields?.length || 0)
           setWorkflow(loadedWorkflow)
         } else {
-          console.error("[v0] Workflow not found for ID:", workflowCompany.workflowId)
+          console.error("Workflow not found for ID:", workflowCompany.workflowId)
           setError(`Workflow not found: ${workflowCompany.workflowId}`)
         }
       } else {
         if (typeof companyId === "number") {
-          console.log("[v0] Loading company from API...")
+          console.log("Loading company from API...")
           const data = await apiService.getCompanyById(companyId)
-          console.log("[v0] Company details loaded from API")
+          console.log("Company details loaded from API")
           setCompanyData(data)
           setIsWorkflowCompany(false)
         } else {
-          console.error("[v0] Company not found in localStorage or API:", companyIdStr)
+          console.error("Company not found in localStorage or API:", companyIdStr)
           setError(`Company not found: ${companyIdStr}`)
         }
       }
     } catch (error) {
-      console.error("[v0] Failed to load company details:", error)
+      console.error("Failed to load company details:", error)
       setError(error instanceof Error ? error.message : "Failed to load company details")
     } finally {
       setLoading(false)
@@ -130,7 +130,7 @@ export function ERPCompanyDetailsPage({ companyId, onBack }: ERPCompanyDetailsPa
   if (isWorkflowCompany && workflowCompanyData && workflow) {
     const { formData } = workflowCompanyData
 
-    console.log("[v0] Rendering workflow company with", workflow.steps.length, "steps")
+    console.log("Rendering workflow company with", workflow.steps.length, "steps")
 
     return (
       <div className="space-y-4 md:space-y-6 p-4 md:p-0">
@@ -168,7 +168,7 @@ export function ERPCompanyDetailsPage({ companyId, onBack }: ERPCompanyDetailsPa
           </div>
 
           {workflow.steps.map((step, stepIndex) => {
-            console.log(`[v0] Rendering step ${stepIndex}: ${step.name}, fields:`, step.fields?.length || 0)
+            console.log(`Rendering step ${stepIndex}: ${step.name}, fields:`, step.fields?.length || 0)
 
             return (
               <TabsContent key={stepIndex} value={`step-${stepIndex}`} className="space-y-4 mt-4">
@@ -182,7 +182,7 @@ export function ERPCompanyDetailsPage({ companyId, onBack }: ERPCompanyDetailsPa
                       <div className="grid gap-4 sm:grid-cols-2">
                         {step.fields.map((field, fieldIndex) => {
                           const fieldValue = formData[field.id]
-                          console.log(`[v0] Field ${field.id}:`, fieldValue)
+                          console.log(`Field ${field.id}:`, fieldValue)
 
                           return (
                             <div key={fieldIndex} className="space-y-1">

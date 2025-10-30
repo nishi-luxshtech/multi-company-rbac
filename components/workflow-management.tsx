@@ -203,13 +203,13 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
   }
 
   const handleSaveCanvas = (nodes: any[], connections: any[]) => {
-    console.log("[v0] ===== WORKFLOW MANAGEMENT: SAVE CANVAS =====")
-    console.log("[v0] Received nodes:", nodes.length)
-    console.log("[v0] Received connections:", connections.length)
+    console.log("===== WORKFLOW MANAGEMENT: SAVE CANVAS =====")
+    console.log("Received nodes:", nodes.length)
+    console.log("Received connections:", connections.length)
 
     // Log each node
     nodes.forEach((node, index) => {
-      console.log(`[v0] Node ${index + 1}:`, {
+      console.log(`Node ${index + 1}:`, {
         id: node.id,
         workflowId: node.workflowId,
         workflowName: node.workflow.name,
@@ -221,19 +221,19 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
     connections.forEach((conn, index) => {
       const sourceNode = nodes.find((n: any) => n.id === conn.sourceId)
       const targetNode = nodes.find((n: any) => n.id === conn.targetId)
-      console.log(`[v0] Connection ${index + 1}:`, {
+      console.log(`Connection ${index + 1}:`, {
         from: sourceNode?.workflow.name,
         to: targetNode?.workflow.name,
       })
     })
 
     // Save to localStorage
-    console.log("[v0] Saving to localStorage...")
+    console.log("Saving to localStorage...")
     localStorage.setItem("workflow-canvas", JSON.stringify({ nodes, connections }))
-    console.log("[v0] ✓ Saved to localStorage")
+    console.log("✓ Saved to localStorage")
 
     // Update workflow connections
-    console.log("[v0] Updating workflow connections...")
+    console.log("Updating workflow connections...")
     let updatedCount = 0
     connections.forEach((conn: any) => {
       const sourceNode = nodes.find((n: any) => n.id === conn.sourceId)
@@ -244,7 +244,7 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
         if (sourceWorkflow) {
           const connectedIds = sourceWorkflow.connectedWorkflows || []
           if (!connectedIds.includes(targetNode.workflowId)) {
-            console.log(`[v0] Connecting: ${sourceWorkflow.name} → ${targetNode.workflow.name}`)
+            console.log(`Connecting: ${sourceWorkflow.name} → ${targetNode.workflow.name}`)
             workflowStorage.update(sourceWorkflow.id, {
               connectedWorkflows: [...connectedIds, targetNode.workflowId],
             })
@@ -254,10 +254,10 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
       }
     })
 
-    console.log(`[v0] ✓ Updated ${updatedCount} workflow connections`)
-    console.log("[v0] Reloading workflows...")
+    console.log(`✓ Updated ${updatedCount} workflow connections`)
+    console.log("Reloading workflows...")
     loadWorkflows()
-    console.log("[v0] ===== SAVE CANVAS COMPLETED =====")
+    console.log("===== SAVE CANVAS COMPLETED =====")
   }
 
   if (connectingWorkflowId) {

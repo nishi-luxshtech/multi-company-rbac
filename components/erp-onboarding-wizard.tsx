@@ -269,12 +269,12 @@ export function ERPOnboardingWizard({ companyId, onComplete, onCancel }: ERPOnbo
         setCommunications(commData)
         setEmployees(empData)
       } catch (err) {
-        console.log("[v0] Could not load related data:", err)
+        console.log("Could not load related data:", err)
       }
 
       setCurrentStep(company.onboarding_step || 1)
     } catch (error) {
-      console.error("[v0] Failed to load company:", error)
+      console.error("Failed to load company:", error)
       setError("Failed to load company data")
     } finally {
       setLoading(false)
@@ -343,7 +343,7 @@ export function ERPOnboardingWizard({ companyId, onComplete, onCancel }: ERPOnbo
         setCurrentStep(nextStep)
       }
     } catch (error: any) {
-      console.error("[v0] Failed to save progress:", error)
+      console.error("Failed to save progress:", error)
       setError(error.response?.data?.detail || "Failed to save progress. Please try again.")
     } finally {
       setSaving(false)

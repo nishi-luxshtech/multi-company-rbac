@@ -86,7 +86,7 @@ export function DynamicCompanyWizard({
           category: dynamicWorkflow.category,
         }
         setWorkflow(convertedWorkflow)
-        console.log("[v0] DynamicCompanyWizard: Loaded dynamic workflow", workflowId)
+        console.log("DynamicCompanyWizard: Loaded dynamic workflow", workflowId)
         
         // Initialize form data
         const initialData: Record<string, any> = {}
@@ -99,10 +99,10 @@ export function DynamicCompanyWizard({
       } else {
         // Fallback to localStorage
         const wf = workflowStorage.getById(workflowId)
-        console.log("[v0] DynamicCompanyWizard: Loading workflow from localStorage", workflowId, wf ? "found" : "not found")
+        console.log("DynamicCompanyWizard: Loading workflow from localStorage", workflowId, wf ? "found" : "not found")
         
         if (wf) {
-          console.log("[v0] DynamicCompanyWizard: Workflow has", wf.steps?.length || 0, "steps")
+          console.log("DynamicCompanyWizard: Workflow has", wf.steps?.length || 0, "steps")
           setWorkflow(wf)
           const initialData: Record<string, any> = {}
           ;(wf.steps || []).forEach((step) => {
@@ -112,7 +112,7 @@ export function DynamicCompanyWizard({
           })
           setFormData(initialData)
         } else {
-          console.error("[v0] DynamicCompanyWizard: Workflow not found:", workflowId)
+          console.error("DynamicCompanyWizard: Workflow not found:", workflowId)
           setWorkflow(null)
           toast({
             title: "Error",
@@ -122,7 +122,7 @@ export function DynamicCompanyWizard({
         }
       }
     } catch (error) {
-      console.error("[v0] DynamicCompanyWizard: Failed to load workflow from API, using localStorage:", error)
+      console.error("DynamicCompanyWizard: Failed to load workflow from API, using localStorage:", error)
       // Fallback to localStorage
       const wf = workflowStorage.getById(workflowId)
       if (wf) {
@@ -171,7 +171,7 @@ export function DynamicCompanyWizard({
 
   if (!currentStepData) {
     console.error(
-      "[v0] DynamicCompanyWizard: Current step data not found. Step:",
+      "DynamicCompanyWizard: Current step data not found. Step:",
       currentStep,
       "Total steps:",
       workflow.steps.length,
@@ -242,7 +242,7 @@ export function DynamicCompanyWizard({
       return
     }
 
-    console.log(`[v0] Marking step ${currentStep + 1} as complete:`, currentStepData.name)
+    console.log(`Marking step ${currentStep + 1} as complete:`, currentStepData.name)
     setCompletedSteps((prev) => new Set(prev).add(currentStep))
 
     toast({
@@ -277,7 +277,7 @@ export function DynamicCompanyWizard({
     }
 
     setIsSubmitting(true)
-    console.log("[v0] Starting batch submission of all steps...")
+    console.log("Starting batch submission of all steps...")
 
     const stepApiEndpoints: Record<string, string> = {
       "General Information": "/api/company/general-info",
@@ -306,7 +306,7 @@ export function DynamicCompanyWizard({
 
         const apiEndpoint = stepApiEndpoints[step.name] || `/api/company/step-${index + 1}`
 
-        console.log(`[v0] Preparing API call for step ${index + 1}: ${step.name} -> ${apiEndpoint}`)
+        console.log(`Preparing API call for step ${index + 1}: ${step.name} -> ${apiEndpoint}`)
 
         // Return the API call promise
         return fetch(apiEndpoint, {
@@ -326,22 +326,22 @@ export function DynamicCompanyWizard({
             return response.json()
           })
           .then((data) => {
-            console.log(`[v0] ✓ Step ${index + 1} (${step.name}) submitted successfully`)
+            console.log(`✓ Step ${index + 1} (${step.name}) submitted successfully`)
             return { success: true, stepName: step.name, data }
           })
           .catch((error) => {
-            console.error(`[v0] ✗ Step ${index + 1} (${step.name}) failed:`, error)
+            console.error(`✗ Step ${index + 1} (${step.name}) failed:`, error)
             return { success: false, stepName: step.name, error: error.message }
           })
       })
 
-      console.log(`[v0] Executing ${apiCalls.length} API calls in parallel...`)
+      console.log(`Executing ${apiCalls.length} API calls in parallel...`)
       const results = await Promise.all(apiCalls)
 
       const successCount = results.filter((r) => r.success).length
       const failureCount = results.filter((r) => !r.success).length
 
-      console.log(`[v0] Batch submission complete: ${successCount} succeeded, ${failureCount} failed`)
+      console.log(`Batch submission complete: ${successCount} succeeded, ${failureCount} failed`)
 
       const companyId = `comp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       const companyName =
@@ -359,7 +359,7 @@ export function DynamicCompanyWizard({
       }
 
       storageService.saveWorkflowCompany(workflowCompany)
-      console.log("[v0] Company saved to localStorage:", companyId)
+      console.log("Company saved to localStorage:", companyId)
 
       if (failureCount > 0) {
         const failedSteps = results.filter((r) => !r.success).map((r) => r.stepName)
@@ -376,7 +376,7 @@ export function DynamicCompanyWizard({
 
       onComplete()
     } catch (error) {
-      console.error("[v0] Batch submission error:", error)
+      console.error("Batch submission error:", error)
 
       const companyId = `comp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       const companyName =
@@ -394,7 +394,7 @@ export function DynamicCompanyWizard({
       }
 
       storageService.saveWorkflowCompany(workflowCompany)
-      console.log("[v0] Company saved to localStorage despite errors:", companyId)
+      console.log("Company saved to localStorage despite errors:", companyId)
 
       toast({
         title: "Company Saved Locally",

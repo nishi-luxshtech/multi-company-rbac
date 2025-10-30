@@ -205,12 +205,12 @@ This is where the magic happens! We use `Promise.all()` to call all APIs simulta
 
 \`\`\`typescript
 const handleSubmitAll = async () => {
-  console.log("[v0] Submitting all steps to different APIs...")
+  console.log("Submitting all steps to different APIs...")
   
   // Create an array of API call promises
   const apiCalls = stepDataArray.map(async (stepData) => {
     try {
-      console.log(`[v0] Calling API for ${stepData.stepName}: ${stepData.endpoint}`)
+      console.log(`Calling API for ${stepData.stepName}: ${stepData.endpoint}`)
       
       // Make the API call
       const response = await fetch(stepData.endpoint, {
@@ -246,10 +246,10 @@ const handleSubmitAll = async () => {
   const allSucceeded = results.every(r => r.success)
   
   if (allSucceeded) {
-    console.log("[v0] All API calls succeeded!")
+    console.log("All API calls succeeded!")
     // Save to localStorage and show success message
   } else {
-    console.log("[v0] Some API calls failed:", results.filter(r => !r.success))
+    console.log("Some API calls failed:", results.filter(r => !r.success))
     // Show error message with details
   }
 }
@@ -414,7 +414,7 @@ const callStepApi = async (stepData: {
   endpoint: string
 }) => {
   try {
-    console.log(`[v0] Calling ${stepData.endpoint} for ${stepData.stepName}`)
+    console.log(`Calling ${stepData.endpoint} for ${stepData.stepName}`)
     
     const response = await fetch(stepData.endpoint, {
       method: "POST",
@@ -437,7 +437,7 @@ const callStepApi = async (stepData: {
     
     const result = await response.json()
     
-    console.log(`[v0] ✓ Success for ${stepData.stepName}:`, result)
+    console.log(`✓ Success for ${stepData.stepName}:`, result)
     
     return {
       stepName: stepData.stepName,
@@ -445,7 +445,7 @@ const callStepApi = async (stepData: {
       data: result
     }
   } catch (error) {
-    console.error(`[v0] ✗ Failed for ${stepData.stepName}:`, error)
+    console.error(`✗ Failed for ${stepData.stepName}:`, error)
     
     return {
       stepName: stepData.stepName,
@@ -779,7 +779,7 @@ const callStepApiWithTimeout = async (stepData, timeout = 30000) => {
 **Solution:**
 \`\`\`typescript
 // Log data before sending
-console.log("[v0] Sending data for", stepData.stepName, ":", stepData.data)
+console.log("Sending data for", stepData.stepName, ":", stepData.data)
 
 // Validate data structure
 const validateStepData = (step: WorkflowStep, data: Record<string, any>) => {

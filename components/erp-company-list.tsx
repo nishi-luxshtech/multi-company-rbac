@@ -53,7 +53,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
 
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === "companies" || e.key === "workflow-companies") {
-        console.log("[v0] Storage changed, reloading companies...")
+        console.log("Storage changed, reloading companies...")
         loadCompanies()
       }
     }
@@ -86,13 +86,13 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
     try {
       setError("")
       setIsPermissionError(false)
-      console.log("[v0] Loading companies from API and localStorage...")
+      console.log("Loading companies from API and localStorage...")
 
       const apiCompanies = await companyAPI.getAll()
-      console.log("[v0] API companies:", apiCompanies.length)
+      console.log("API companies:", apiCompanies.length)
 
       const localCompanies = storageService.getCompanies()
-      console.log("[v0] localStorage companies:", localCompanies.length)
+      console.log("localStorage companies:", localCompanies.length)
 
       const allCompanies = [...apiCompanies]
 
@@ -113,11 +113,11 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
         }
       })
 
-      console.log("[v0] Total companies (API + localStorage):", allCompanies.length)
+      console.log("Total companies (API + localStorage):", allCompanies.length)
       setCompanies(allCompanies)
       setFilteredCompanies(allCompanies)
     } catch (error: any) {
-      console.error("[v0] Failed to load companies:", error)
+      console.error("Failed to load companies:", error)
 
       if (error.response?.status === 403) {
         setIsPermissionError(true)
@@ -127,7 +127,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
 
         const localCompanies = storageService.getCompanies()
         if (localCompanies.length > 0) {
-          console.log("[v0] API failed, showing localStorage companies only:", localCompanies.length)
+          console.log("API failed, showing localStorage companies only:", localCompanies.length)
           const companies = localCompanies.map(
             (localCompany) =>
               ({
@@ -165,24 +165,24 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
     if (!deleteCompanyId) return
 
     try {
-      console.log("[v0] Deleting company", deleteCompanyId)
+      console.log("Deleting company", deleteCompanyId)
 
       // Check if it's a workflow company (string ID) or API company (number ID)
       if (typeof deleteCompanyId === "string") {
         // Workflow company - delete from localStorage
         storageService.deleteWorkflowCompany(deleteCompanyId)
-        console.log("[v0] Deleted workflow company from localStorage:", deleteCompanyId)
+        console.log("Deleted workflow company from localStorage:", deleteCompanyId)
       } else {
         // API company - delete via API
         await companyAPI.delete(deleteCompanyId)
-        console.log("[v0] Deleted API company:", deleteCompanyId)
+        console.log("Deleted API company:", deleteCompanyId)
       }
 
       // Reload companies list
       await loadCompanies()
       setDeleteCompanyId(null)
     } catch (error) {
-      console.error("[v0] Failed to delete company:", error)
+      console.error("Failed to delete company:", error)
       // Even if API fails, try to remove from localStorage
       if (typeof deleteCompanyId === "string") {
         storageService.deleteWorkflowCompany(deleteCompanyId)

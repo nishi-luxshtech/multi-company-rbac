@@ -89,7 +89,7 @@ export function ERPUserManagement() {
       setFilteredUsers(usersData)
       setCompanies(companiesData)
     } catch (error) {
-      console.error("[v0] Failed to load data:", error)
+      console.error("Failed to load data:", error)
     } finally {
       setLoading(false)
     }
@@ -170,7 +170,7 @@ export function ERPUserManagement() {
         payload.password = formData.password
       }
 
-      console.log("[v0] Saving user with payload:", payload)
+      console.log("Saving user with payload:", payload)
 
       if (editingUser) {
         await userAPI.update(editingUser.id, payload)
@@ -188,7 +188,7 @@ export function ERPUserManagement() {
         company_id: null,
       })
     } catch (error: any) {
-      console.error("[v0] Failed to save user:", error)
+      console.error("Failed to save user:", error)
       const errorMessage = error.response?.data?.detail || "Failed to save user. Please try again."
       setError(errorMessage)
     } finally {
@@ -204,7 +204,7 @@ export function ERPUserManagement() {
       await loadData()
       setDeleteUserId(null)
     } catch (error) {
-      console.error("[v0] Failed to delete user:", error)
+      console.error("Failed to delete user:", error)
     }
   }
 

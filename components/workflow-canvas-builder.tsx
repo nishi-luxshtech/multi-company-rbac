@@ -66,7 +66,7 @@ function WorkflowNode({ data }: { data: { workflow: WorkflowType; nodeId: string
                 className="h-7 w-7 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
                 onClick={(e) => {
                   e.stopPropagation()
-                  console.log("[v0] Delete button clicked for node:", data.nodeId)
+                  console.log("Delete button clicked for node:", data.nodeId)
                   data.onDelete(data.nodeId)
                 }}
                 title="Delete workflow"
@@ -122,16 +122,16 @@ export function WorkflowCanvasBuilder({ workflows, onSave }: WorkflowCanvasBuild
 
   const deleteNode = useCallback(
     (nodeId: string) => {
-      console.log("[v0] Deleting node:", nodeId)
+      console.log("Deleting node:", nodeId)
 
       setNodes((nds) => {
         console.log(
-          "[v0] Current nodes before deletion:",
+          "Current nodes before deletion:",
           nds.map((n) => n.id),
         )
         const filtered = nds.filter((n) => n.id !== nodeId)
         console.log(
-          "[v0] Nodes after deletion:",
+          "Nodes after deletion:",
           filtered.map((n) => n.id),
         )
         return filtered
@@ -139,7 +139,7 @@ export function WorkflowCanvasBuilder({ workflows, onSave }: WorkflowCanvasBuild
 
       setEdges((eds) => {
         const filtered = eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
-        console.log("[v0] Edges after deletion:", filtered.length)
+        console.log("Edges after deletion:", filtered.length)
         return filtered
       })
 
@@ -156,7 +156,7 @@ export function WorkflowCanvasBuilder({ workflows, onSave }: WorkflowCanvasBuild
     if (savedCanvas) {
       try {
         const { nodes: savedNodes, connections: savedConnections } = JSON.parse(savedCanvas)
-        console.log("[v0] Loading saved canvas:", { nodes: savedNodes.length, connections: savedConnections.length })
+        console.log("Loading saved canvas:", { nodes: savedNodes.length, connections: savedConnections.length })
 
         const flowNodes: Node[] = savedNodes.map((node: any) => ({
           id: node.id,
@@ -185,7 +185,7 @@ export function WorkflowCanvasBuilder({ workflows, onSave }: WorkflowCanvasBuild
         setNodes(flowNodes)
         setEdges(flowEdges)
       } catch (error) {
-        console.error("[v0] Error loading canvas:", error)
+        console.error("Error loading canvas:", error)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -287,7 +287,7 @@ export function WorkflowCanvasBuilder({ workflows, onSave }: WorkflowCanvasBuild
         },
       }
 
-      console.log("[v0] Adding new node:", nodeId)
+      console.log("Adding new node:", nodeId)
       setNodes((nds) => [...nds, newNode])
       setShowWorkflowSelector(false)
       setSearchQuery("")
@@ -300,9 +300,9 @@ export function WorkflowCanvasBuilder({ workflows, onSave }: WorkflowCanvasBuild
   )
 
   const handleSave = () => {
-    console.log("[v0] ===== SAVE CANVAS STARTED =====")
-    console.log("[v0] Total nodes:", nodes.length)
-    console.log("[v0] Total edges:", edges.length)
+    console.log("===== SAVE CANVAS STARTED =====")
+    console.log("Total nodes:", nodes.length)
+    console.log("Total edges:", edges.length)
 
     const savedNodes = nodes.map((node) => ({
       id: node.id,
@@ -318,7 +318,7 @@ export function WorkflowCanvasBuilder({ workflows, onSave }: WorkflowCanvasBuild
     }))
 
     const workflowNames = nodes.map((node) => node.data.workflow.name)
-    console.log("[v0] Workflows in canvas:", workflowNames)
+    console.log("Workflows in canvas:", workflowNames)
 
     setSaveDetails({
       nodes: nodes.length,
@@ -326,20 +326,20 @@ export function WorkflowCanvasBuilder({ workflows, onSave }: WorkflowCanvasBuild
       workflows: workflowNames,
     })
 
-    console.log("[v0] Calling onSave callback...")
+    console.log("Calling onSave callback...")
     onSave?.(savedNodes, savedConnections)
-    console.log("[v0] onSave callback completed")
+    console.log("onSave callback completed")
 
-    console.log("[v0] Dispatching canvas-saved event...")
+    console.log("Dispatching canvas-saved event...")
     window.dispatchEvent(
       new CustomEvent("workflow-canvas-saved", {
         detail: { nodes: nodes.length, connections: edges.length },
       }),
     )
-    console.log("[v0] Event dispatched")
+    console.log("Event dispatched")
 
     setShowSaveDialog(true)
-    console.log("[v0] ===== SAVE CANVAS COMPLETED =====")
+    console.log("===== SAVE CANVAS COMPLETED =====")
   }
 
   const filteredWorkflows = workflows.filter(

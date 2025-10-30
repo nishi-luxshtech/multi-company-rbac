@@ -28,7 +28,7 @@ export function ERPAuthProvider({ children }: { children: ReactNode }) {
           const parsedUser = JSON.parse(storedUser)
           setUser(parsedUser)
         } catch (error) {
-          console.error("[v0] Failed to parse stored user:", error)
+          console.error("Failed to parse stored user:", error)
           localStorage.removeItem("auth_token")
           localStorage.removeItem("user")
         }
@@ -41,9 +41,9 @@ export function ERPAuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
-      console.log("[v0] Attempting login for:", username)
+      console.log("Attempting login for:", username)
       const response = await authAPI.login({ username, password })
-      console.log("[v0] Login response received:", response)
+      console.log("Login response received:", response)
 
       // Store token
       localStorage.setItem("auth_token", response.access_token)
@@ -59,11 +59,11 @@ export function ERPAuthProvider({ children }: { children: ReactNode }) {
 
       setUser(currentUser)
       localStorage.setItem("user", JSON.stringify(currentUser))
-      console.log("[v0] Login successful, user set:", currentUser)
+      console.log("Login successful, user set:", currentUser)
 
       return true
     } catch (error: any) {
-      console.error("[v0] Login failed:", error?.response?.data || error?.message || error)
+      console.error("Login failed:", error?.response?.data || error?.message || error)
       return false
     }
   }
@@ -72,7 +72,7 @@ export function ERPAuthProvider({ children }: { children: ReactNode }) {
     try {
       await authAPI.logout()
     } catch (error) {
-      console.error("[v0] Logout API call failed:", error)
+      console.error("Logout API call failed:", error)
     } finally {
       // Clear local state regardless of API call success
       setUser(null)

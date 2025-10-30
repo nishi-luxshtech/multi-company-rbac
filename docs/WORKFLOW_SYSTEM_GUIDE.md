@@ -470,7 +470,7 @@ const handleSubmitAll = async () => {
         // Determine API endpoint based on step name/type
         const endpoint = getApiEndpointForStep(step.name)
         
-        console.log(`[v0] Calling API for ${step.name}:`, endpoint)
+        console.log(`Calling API for ${step.name}:`, endpoint)
         
         // Make API call
         const response = await fetch(endpoint, {
@@ -491,7 +491,7 @@ const handleSubmitAll = async () => {
           data,
         }
       } catch (error) {
-        console.error(`[v0] API call failed for ${step.name}:`, error)
+        console.error(`API call failed for ${step.name}:`, error)
         return {
           step: step.name,
           success: false,
@@ -508,7 +508,7 @@ const handleSubmitAll = async () => {
     const allSucceeded = apiResults.every(result => result.success)
 
     if (allSucceeded) {
-      console.log('[v0] All API calls succeeded:', results)
+      console.log('All API calls succeeded:', results)
       
       // Save company to localStorage
       const companyData = {
@@ -542,7 +542,7 @@ const handleSubmitAll = async () => {
       })
     }
   } catch (error) {
-    console.error('[v0] Error during batch submission:', error)
+    console.error('Error during batch submission:', error)
     toast({
       title: "Error",
       description: "Failed to submit workflow data",
@@ -849,29 +849,29 @@ The system includes 5 pre-configured demo accounts for testing different roles:
 Enable detailed logging by opening browser console:
 
 \`\`\`javascript
-// All components log with [v0] prefix
+// All components log with prefix
 // Look for these messages:
 
 // Canvas operations
-"[v0] Loading saved canvas"
-"[v0] Saving canvas"
-"[v0] Adding workflow to canvas"
-"[v0] Deleting node"
+"Loading saved canvas"
+"Saving canvas"
+"Adding workflow to canvas"
+"Deleting node"
 
 // Workflow operations
-"[v0] Selected workflow"
-"[v0] View mode selected"
-"[v0] Step validation"
-"[v0] Marking step as complete"
+"Selected workflow"
+"View mode selected"
+"Step validation"
+"Marking step as complete"
 
 // API operations
-"[v0] Calling API for [step name]"
-"[v0] All API calls succeeded"
-"[v0] API call failed for [step name]"
+"Calling API for [step name]"
+"All API calls succeeded"
+"API call failed for [step name]"
 
 // Company operations
-"[v0] Saved workflow company to localStorage"
-"[v0] Loading companies from localStorage"
+"Saved workflow company to localStorage"
+"Loading companies from localStorage"
 \`\`\`
 
 ### Browser Compatibility
@@ -986,4 +986,4 @@ For questions, issues, or feature requests:
 
 **Last Updated:** 2025-01-29
 **Version:** 1.0.0
-**Author:** v0 AI Assistant
+**Author:** Nishi Shah

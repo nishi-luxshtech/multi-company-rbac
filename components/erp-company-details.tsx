@@ -41,12 +41,12 @@ export function ERPCompanyDetails({ companyId, open, onOpenChange, onEdit }: Com
   const loadCompanyDetails = async () => {
     try {
       setLoading(true)
-      console.log("[v0] Loading company details for ID:", companyId)
+      console.log("Loading company details for ID:", companyId)
       const data = await companyAPI.getById(companyId)
-      console.log("[v0] Company details loaded:", data)
+      console.log("Company details loaded:", data)
       setCompanyData(data)
     } catch (error) {
-      console.error("[v0] Failed to load company details:", error)
+      console.error("Failed to load company details:", error)
     } finally {
       setLoading(false)
     }

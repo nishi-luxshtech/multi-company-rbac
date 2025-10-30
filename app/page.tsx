@@ -39,7 +39,7 @@ function ERPApp() {
   }
 
   const handleCanvasWorkflowSelected = (workflowIds: string[], selectedViewMode: "wizard" | "tabs") => {
-    console.log("[v0] Canvas workflow chain selected:", workflowIds)
+    console.log("Canvas workflow chain selected:", workflowIds)
     if (workflowIds.length > 0) {
       setSelectedWorkflowId(workflowIds[0])
       setWorkflowChain(workflowIds)
@@ -52,11 +52,11 @@ function ERPApp() {
   const handleOnboardingComplete = () => {
     if (workflowChain.length > 1) {
       const remainingWorkflows = workflowChain.slice(1)
-      console.log("[v0] Moving to next workflow in chain:", remainingWorkflows[0])
+      console.log("Moving to next workflow in chain:", remainingWorkflows[0])
       setSelectedWorkflowId(remainingWorkflows[0])
       setWorkflowChain(remainingWorkflows)
     } else {
-      console.log("[v0] All workflows in chain completed")
+      console.log("All workflows in chain completed")
       setOnboardingCompanyId(undefined)
       setSelectedWorkflowId(null)
       setWorkflowChain([])
