@@ -1,2 +1,3 @@
-# multi-company-rbac
-Multiple Company Role Based Access Control System
+# multicompanyrbac
+
+Multiple Company Role Based Access Workflow
