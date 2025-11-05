@@ -43,8 +43,10 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
             setName(apiWorkflow.name)
             setDescription(apiWorkflow.description)
             setIsActive(apiWorkflow.isActive)
-            const stepsWithFields = apiWorkflow.steps.map((step) => ({
+            // Normalize step orders to start from 1 (fix for steps with order 0)
+            const stepsWithFields = apiWorkflow.steps.map((step, index) => ({
               ...step,
+              order: step.order && step.order > 0 ? step.order : index + 1,
               fields: (step.fields || []).map((field) => ({
                 id: field.id,
                 label: field.label,
@@ -72,8 +74,10 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
           setName(workflow.name)
           setDescription(workflow.description)
           setIsActive(workflow.isActive)
-          const stepsWithFields = workflow.steps.map((step) => ({
+          // Normalize step orders to start from 1
+          const stepsWithFields = workflow.steps.map((step, index) => ({
             ...step,
+            order: step.order && step.order > 0 ? step.order : index + 1,
             fields: step.fields || [],
           }))
           setSteps(stepsWithFields)
