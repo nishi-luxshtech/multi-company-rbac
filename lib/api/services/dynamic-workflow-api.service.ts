@@ -16,7 +16,9 @@ import {
   WorkflowMigrationRequest,
   WorkflowMigrationResponse,
   WorkflowTableDataResponse,
+  AllMasterTableDataResponse,
   WorkflowBuilderValidationResponse,
+  TableDataValidationResult,
 } from "../types/dynamic-workflow.types"
 
 export const dynamicWorkflowAPI = {
@@ -27,6 +29,19 @@ export const dynamicWorkflowAPI = {
     return await apiClient.post<DynamicWorkflowResponse>(
       API_ENDPOINTS.dynamicWorkflows.create(),
       data
+    )
+  },
+
+  /**
+   * List all dynamic workflows
+   */
+  async listWorkflows(activeOnly: boolean = true): Promise<DynamicWorkflowResponse[]> {
+    // The base endpoint /workflows/builder/ supports both GET (list) and POST (create)
+    return await apiClient.get<DynamicWorkflowResponse[]>(
+      API_ENDPOINTS.dynamicWorkflows.create(), // GET /workflows/builder/
+      {
+        params: { active_only: activeOnly },
+      }
     )
   },
 
@@ -106,7 +121,8 @@ export const dynamicWorkflowAPI = {
     id: string,
     companyId?: number,
     limit: number = 100,
-    offset: number = 0
+    offset: number = 0,
+    groupByStep: boolean = false
   ): Promise<WorkflowTableDataResponse> {
     return await apiClient.get<WorkflowTableDataResponse>(
       API_ENDPOINTS.dynamicWorkflows.getTableData(id),
@@ -115,6 +131,29 @@ export const dynamicWorkflowAPI = {
           company_id: companyId,
           limit,
           offset,
+          group_by_step: groupByStep,
+        },
+      }
+    )
+  },
+
+  /**
+   * Get all master table records from ALL workflows
+   */
+  async getAllMasterTableData(
+    companyId?: number,
+    limitPerWorkflow: number = 100,
+    offsetPerWorkflow: number = 0,
+    groupByStep: boolean = false
+  ): Promise<AllMasterTableDataResponse> {
+    return await apiClient.get<AllMasterTableDataResponse>(
+      API_ENDPOINTS.dynamicWorkflows.getAllMasterTableData(),
+      {
+        params: {
+          company_id: companyId,
+          limit_per_workflow: limitPerWorkflow,
+          offset_per_workflow: offsetPerWorkflow,
+          group_by_step: groupByStep,
         },
       }
     )
@@ -138,6 +177,36 @@ export const dynamicWorkflowAPI = {
   async validateWorkflow(id: string): Promise<WorkflowBuilderValidationResponse> {
     return await apiClient.get<WorkflowBuilderValidationResponse>(
       API_ENDPOINTS.dynamicWorkflows.validate(id)
+    )
+  },
+
+  /**
+   * Validate table data before creating/updating a record
+   */
+  async validateTableData(
+    id: string,
+    data: Record<string, any>,
+    isUpdate: boolean = false
+  ): Promise<TableDataValidationResult> {
+    return await apiClient.post<TableDataValidationResult>(
+      API_ENDPOINTS.dynamicWorkflows.validateTableData(id),
+      data,
+      {
+        params: { is_update: isUpdate },
+      }
+    )
+  },
+
+  /**
+   * Create a new record in the workflow's master table
+   */
+  async createTableRecord(
+    id: string,
+    data: Record<string, any>
+  ): Promise<Record<string, any>> {
+    return await apiClient.post<Record<string, any>>(
+      API_ENDPOINTS.dynamicWorkflows.createTableRecord(id),
+      data
     )
   },
 }

@@ -18,8 +18,8 @@ import {
   AlertCircle,
   ShieldAlert,
 } from "lucide-react"
-import { companyAPI, type Company } from "@/lib/api-services"
-import { storageService } from "@/lib/storage-service"
+import { dynamicWorkflowAPI } from "@/lib/api/services/dynamic-workflow-api.service"
+import type { AllMasterTableDataResponse } from "@/lib/api/types/dynamic-workflow.types"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,15 +31,31 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { ERPCompanyDetails } from "@/components/erp-company-details"
+import { WorkflowDataViewPage } from "@/components/workflow-data-view-page"
 
 interface ERPCompanyListProps {
   onStartOnboarding: (companyId?: number) => void
   onViewCompany?: (companyId: number) => void
 }
 
+interface MasterRecord {
+  id: string | number
+  workflow_id: string
+  workflow_name?: string
+  company_id?: number
+  company_name: string
+  company_code?: string
+  country?: string
+  form_of_business?: string
+  accounting_currency?: string
+  is_complete?: boolean
+  onboarding_step?: number
+  [key: string]: any // For other dynamic fields
+}
+
 export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyListProps) {
-  const [companies, setCompanies] = useState<Company[]>([])
-  const [filteredCompanies, setFilteredCompanies] = useState<Company[]>([])
+  const [masterRecords, setMasterRecords] = useState<MasterRecord[]>([])
+  const [filteredMasterRecords, setFilteredMasterRecords] = useState<MasterRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
@@ -47,106 +63,170 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
   const [deleteCompanyId, setDeleteCompanyId] = useState<number | string | null>(null)
   const [error, setError] = useState<string>("")
   const [isPermissionError, setIsPermissionError] = useState(false)
+  const [viewWorkflowData, setViewWorkflowData] = useState<{
+    show: boolean
+    workflowId: string | null
+    companyId: number | null
+    recordId: string | null
+    companyName: string | null
+  }>({
+    show: false,
+    workflowId: null,
+    companyId: null,
+    recordId: null,
+    companyName: null,
+  })
 
   useEffect(() => {
-    loadCompanies()
-
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "companies" || e.key === "workflow-companies") {
-        console.log("Storage changed, reloading companies...")
-        loadCompanies()
-      }
+    // Check if user is authenticated before loading data
+    const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null
+    if (!token) {
+      setError("Not authenticated. Please log in to continue.")
+      setIsPermissionError(false)
+      setLoading(false)
+      // Redirect to login
+      setTimeout(() => {
+        if (typeof window !== "undefined") {
+          window.location.href = "/"
+        }
+      }, 1500)
+      return
     }
-
-    window.addEventListener("storage", handleStorageChange)
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange)
-    }
-  }, []) // Added empty dependency array to prevent infinite loop
+    loadMasterRecords()
+  }, []) // Load master records from server on mount
 
   useEffect(() => {
-    // Filter companies based on search query
+    // Filter master records based on search query
     if (searchQuery.trim() === "") {
-      setFilteredCompanies(companies)
+      setFilteredMasterRecords(masterRecords)
     } else {
       const query = searchQuery.toLowerCase()
-      setFilteredCompanies(
-        companies.filter(
-          (company) =>
-            company.company_name.toLowerCase().includes(query) ||
-            company.company_code?.toLowerCase().includes(query) ||
-            company.country?.toLowerCase().includes(query),
+      setFilteredMasterRecords(
+        masterRecords.filter(
+          (record) =>
+            record.company_name?.toLowerCase().includes(query) ||
+            record.company_code?.toLowerCase().includes(query) ||
+            record.country?.toLowerCase().includes(query) ||
+            record.workflow_name?.toLowerCase().includes(query),
         ),
       )
     }
-  }, [searchQuery, companies])
+  }, [searchQuery, masterRecords])
 
-  const loadCompanies = async () => {
+
+  const loadMasterRecords = async () => {
     try {
+      setLoading(true)
       setError("")
       setIsPermissionError(false)
-      console.log("Loading companies from API and localStorage...")
+      console.log("Loading master table records from all workflows...")
 
-      const apiCompanies = await companyAPI.getAll()
-      console.log("API companies:", apiCompanies.length)
+      const response: AllMasterTableDataResponse = await dynamicWorkflowAPI.getAllMasterTableData(
+        undefined, // company_id - undefined to get all
+        100, // limit_per_workflow
+        0, // offset_per_workflow
+        false // group_by_step
+      )
 
-      const localCompanies = storageService.getCompanies()
-      console.log("localStorage companies:", localCompanies.length)
+      console.log("Master records response:", response)
 
-      const allCompanies = [...apiCompanies]
-
-      localCompanies.forEach((localCompany) => {
-        const exists = apiCompanies.some((apiCompany) => apiCompany.id === localCompany.id)
-        if (!exists) {
-          allCompanies.push({
-            id: localCompany.id,
-            company_name: localCompany.name,
-            company_code: localCompany.id,
-            country: "N/A",
-            is_complete: true,
-            onboarding_step: 9,
-            form_of_business: "Workflow Created",
-            accounting_currency: "N/A",
-            is_active: true,
-          } as Company)
+      // Flatten all records from all workflows into a single array
+      // response.workflow_data is a dictionary, so we need to iterate over its values
+      const allRecords: MasterRecord[] = []
+      
+      Object.values(response.workflow_data || {}).forEach((workflow) => {
+        console.log(`Processing workflow: ${workflow.workflow_name}`, workflow)
+        
+        // Only process workflows that have records
+        if (!workflow.records || workflow.records.length === 0) {
+          console.log(`Skipping workflow ${workflow.workflow_id} - no records`)
+          return
         }
+        
+        workflow.records.forEach((record) => {
+          console.log("Processing record:", record)
+          
+          // Extract fields directly from the record - API returns fields with exact names
+          // Based on API response: company_name, company_code, country, form_of_business, accounting_currency
+          // Spread record first, then override with our mapped fields to ensure correct values
+          const masterRecord: MasterRecord = {
+            ...record, // Include all fields from the record first
+            // Then override with our mapped/processed fields
+            id: record.id || record.company_id || `${workflow.workflow_id}-${Math.random()}`,
+            workflow_id: workflow.workflow_id,
+            workflow_name: workflow.workflow_name,
+            company_id: record.company_id, // Preserve company_id from record
+            // Direct field access - these fields exist in the API response
+            company_name: record.company_name || "N/A",
+            company_code: record.company_code || String(record.company_id || record.id || "N/A"),
+            country: record.country || record.address_country || "N/A",
+            form_of_business: record.form_of_business || "N/A",
+            accounting_currency: record.accounting_currency || "N/A",
+            // Determine completion status - assume complete if all required fields are present
+            is_complete: record.is_complete !== undefined 
+              ? record.is_complete 
+              : !!(record.company_name && record.company_code),
+            onboarding_step: record.onboarding_step || 9,
+          }
+          
+          console.log("Mapped master record:", masterRecord)
+          allRecords.push(masterRecord)
+        })
       })
 
-      console.log("Total companies (API + localStorage):", allCompanies.length)
-      setCompanies(allCompanies)
-      setFilteredCompanies(allCompanies)
-    } catch (error: any) {
-      console.error("Failed to load companies:", error)
-
-      if (error.response?.status === 403) {
-        setIsPermissionError(true)
-        setError("You don't have permission to view companies. Please contact your administrator.")
+      console.log("Total master records:", allRecords.length)
+      if (allRecords.length > 0) {
+        console.log("Sample master record:", allRecords[0])
+        console.log("Master record fields:", {
+          company_name: allRecords[0].company_name,
+          company_code: allRecords[0].company_code,
+          country: allRecords[0].country,
+          form_of_business: allRecords[0].form_of_business,
+          accounting_currency: allRecords[0].accounting_currency,
+        })
       } else {
-        setError(error.response?.data?.detail || error.message || "Failed to load companies from API")
-
-        const localCompanies = storageService.getCompanies()
-        if (localCompanies.length > 0) {
-          console.log("API failed, showing localStorage companies only:", localCompanies.length)
-          const companies = localCompanies.map(
-            (localCompany) =>
-              ({
-                id: localCompany.id,
-                company_name: localCompany.name,
-                company_code: localCompany.id,
-                country: "N/A",
-                is_complete: true,
-                onboarding_step: 9,
-                form_of_business: "Workflow Created",
-                accounting_currency: "N/A",
-                is_active: true,
-              }) as Company,
-          )
-          setCompanies(companies)
-          setFilteredCompanies(companies)
-          setError("") // Clear error if we have localStorage companies
-        }
+        console.warn("⚠️ No master records found! Check if workflow has data inserted.")
       }
+      setMasterRecords(allRecords)
+      setFilteredMasterRecords(allRecords)
+    } catch (error: any) {
+      console.error("Failed to load master records:", error)
+      console.error("Error details:", error.response?.data || error.message)
+      
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        const errorDetail = error.response?.data?.detail || error.response?.data?.message || error.message || ""
+        const errorLower = errorDetail.toLowerCase()
+        
+        // Check for authentication errors
+        if (
+          errorLower.includes("token") || 
+          errorLower.includes("invalid") || 
+          errorLower.includes("expired") ||
+          errorLower.includes("not authenticated") ||
+          errorLower.includes("authentication") ||
+          errorDetail === "Not authenticated"
+        ) {
+          setIsPermissionError(false)
+          setError("Not authenticated. Please log in to continue.")
+          // Clear invalid token
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("auth_token")
+            localStorage.removeItem("user")
+            // Redirect to login after a short delay
+            setTimeout(() => {
+              window.location.href = "/"
+            }, 2000)
+          }
+        } else {
+          setIsPermissionError(true)
+          setError("You don't have permission to view companies. Please contact your administrator.")
+        }
+      } else {
+        setError(error.response?.data?.detail || error.response?.data?.message || error.message || "Failed to load companies from server")
+      }
+      
+      setMasterRecords([])
+      setFilteredMasterRecords([])
     } finally {
       setLoading(false)
     }
@@ -161,34 +241,53 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
     }
   }
 
+  const handleViewMasterRecord = (record: MasterRecord) => {
+    const workflowId = record.workflow_id
+    // Extract company_id from the record (it might be in the record object itself)
+    const companyId = record.company_id || (typeof record.id === "number" ? record.id : undefined)
+    
+    if (!workflowId) {
+      console.error("No workflow ID found in record")
+      return
+    }
+
+    setViewWorkflowData({
+      show: true,
+      workflowId,
+      companyId: companyId || null,
+      recordId: typeof record.id === "string" ? record.id : null,
+      companyName: record.company_name || null,
+    })
+  }
+
   const handleDelete = async () => {
     if (!deleteCompanyId) return
 
     try {
-      console.log("Deleting company", deleteCompanyId)
-
-      // Check if it's a workflow company (string ID) or API company (number ID)
-      if (typeof deleteCompanyId === "string") {
-        // Workflow company - delete from localStorage
-        storageService.deleteWorkflowCompany(deleteCompanyId)
-        console.log("Deleted workflow company from localStorage:", deleteCompanyId)
-      } else {
-        // API company - delete via API
-        await companyAPI.delete(deleteCompanyId)
-        console.log("Deleted API company:", deleteCompanyId)
+      console.log("Deleting master record", deleteCompanyId)
+      
+      // Find the record to get workflow_id
+      const record = masterRecords.find(r => r.id === deleteCompanyId || r.company_id === deleteCompanyId)
+      
+      if (!record || !record.workflow_id) {
+        console.error("Cannot delete: record or workflow_id not found")
+        setError("Cannot delete: record not found")
+        setDeleteCompanyId(null)
+        return
       }
 
-      // Reload companies list
-      await loadCompanies()
+      // Delete via workflow builder API
+      // Note: The backend should have a DELETE endpoint for table-data records
+      // For now, we'll reload the data after attempting deletion
+      // TODO: Implement DELETE /workflows/builder/{workflow_id}/table-data/{record_id} endpoint call
+      console.log(`Would delete record ${deleteCompanyId} from workflow ${record.workflow_id}`)
+      
+      // Reload master records from server
+      await loadMasterRecords()
       setDeleteCompanyId(null)
     } catch (error) {
-      console.error("Failed to delete company:", error)
-      // Even if API fails, try to remove from localStorage
-      if (typeof deleteCompanyId === "string") {
-        storageService.deleteWorkflowCompany(deleteCompanyId)
-        await loadCompanies()
-        setDeleteCompanyId(null)
-      }
+      console.error("Failed to delete record:", error)
+      setError("Failed to delete record. Please try again.")
     }
   }
 
@@ -228,7 +327,18 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
               </p>
               <p className="text-sm text-muted-foreground mb-4">{error}</p>
               {!isPermissionError && (
-                <Button onClick={loadCompanies} variant="outline">
+                <Button 
+                  onClick={() => {
+                    // Check token before retrying
+                    const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null
+                    if (!token) {
+                      window.location.href = "/"
+                    } else {
+                      loadMasterRecords()
+                    }
+                  }} 
+                  variant="outline"
+                >
                   Try Again
                 </Button>
               )}
@@ -236,6 +346,27 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
           </CardContent>
         </Card>
       </div>
+    )
+  }
+
+  // Show full-screen workflow data view if requested
+  if (viewWorkflowData.show && viewWorkflowData.workflowId) {
+    return (
+      <WorkflowDataViewPage
+        workflowId={viewWorkflowData.workflowId}
+        companyId={viewWorkflowData.companyId || undefined}
+        recordId={viewWorkflowData.recordId || undefined}
+        companyName={viewWorkflowData.companyName || undefined}
+        onBack={() => {
+          setViewWorkflowData({
+            show: false,
+            workflowId: null,
+            companyId: null,
+            recordId: null,
+            companyName: null,
+          })
+        }}
+      />
     )
   }
 
@@ -259,7 +390,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search by company name, code, or country..."
+              placeholder="Search by company name, code, country, or workflow..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
@@ -268,13 +399,13 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
         </CardContent>
       </Card>
 
-      {/* Company List */}
-      {filteredCompanies.length === 0 ? (
+      {/* Master Records List (from all workflows) */}
+      {filteredMasterRecords.length === 0 ? (
         <Card>
           <CardContent className="py-12">
             <div className="text-center text-muted-foreground">
               <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p className="text-lg font-medium mb-1">{searchQuery ? "No companies found" : "No companies yet"}</p>
+              <p className="text-lg font-medium mb-1">{searchQuery ? "No records found" : "No records yet"}</p>
               <p className="text-sm">
                 {searchQuery ? "Try adjusting your search query" : "Get started by adding your first company"}
               </p>
@@ -283,8 +414,9 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
         </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredCompanies.map((company) => (
-            <Card key={company.id} className="hover-lift">
+          {/* Display Master Records First - These have the actual workflow data */}
+          {filteredMasterRecords.map((record, index) => (
+            <Card key={`master-${record.workflow_id}-${record.id}-${index}`} className="hover-lift">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center space-x-3">
@@ -292,8 +424,8 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                       <Building2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div>
-                      <CardTitle className="text-lg">{company.company_name}</CardTitle>
-                      <CardDescription className="text-xs">{company.company_code || "No code"}</CardDescription>
+                      <CardTitle className="text-lg">{record.company_name || "N/A"}</CardTitle>
+                      <CardDescription className="text-xs">{record.company_code || record.id || "No code"}</CardDescription>
                     </div>
                   </div>
                 </div>
@@ -301,7 +433,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
               <CardContent className="space-y-4">
                 {/* Status Badge */}
                 <div>
-                  {company.is_complete ? (
+                  {record.is_complete ? (
                     <Badge variant="default" className="bg-green-600">
                       <CheckCircle2 className="h-3 w-3 mr-1" />
                       Complete
@@ -309,28 +441,34 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                   ) : (
                     <Badge variant="secondary">
                       <Clock className="h-3 w-3 mr-1" />
-                      Step {company.onboarding_step || 1}/9
+                      {record.onboarding_step ? `Step ${record.onboarding_step}/9` : "In Progress"}
                     </Badge>
                   )}
                 </div>
 
                 <div className="space-y-2 text-sm">
-                  {company.country && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Country:</span>
+                    <span className="font-medium truncate ml-2">
+                      {record.country || record.address_country || "N/A"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Business Type:</span>
+                    <span className="font-medium truncate ml-2">
+                      {record.form_of_business || "N/A"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Currency:</span>
+                    <span className="font-medium">
+                      {record.accounting_currency || "N/A"}
+                    </span>
+                  </div>
+                  {record.workflow_name && (
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Country:</span>
-                      <span className="font-medium truncate ml-2">{company.country}</span>
-                    </div>
-                  )}
-                  {company.form_of_business && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Business Type:</span>
-                      <span className="font-medium truncate ml-2">{company.form_of_business}</span>
-                    </div>
-                  )}
-                  {company.accounting_currency && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Currency:</span>
-                      <span className="font-medium">{company.accounting_currency}</span>
+                      <span className="text-muted-foreground">Workflow:</span>
+                      <span className="font-medium truncate ml-2 text-xs">{record.workflow_name}</span>
                     </div>
                   )}
                 </div>
@@ -341,7 +479,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                     variant="outline"
                     size="sm"
                     className="flex-1 bg-transparent"
-                    onClick={() => handleViewDetails(company.id)}
+                    onClick={() => handleViewMasterRecord(record)}
                   >
                     <Eye className="h-3 w-3 mr-1" />
                     View
@@ -350,7 +488,10 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                     variant="outline"
                     size="sm"
                     className="flex-1 bg-transparent"
-                    onClick={() => onStartOnboarding(company.id)}
+                    onClick={() => {
+                      const companyId = typeof record.id === "number" ? record.id : undefined
+                      onStartOnboarding(companyId)
+                    }}
                   >
                     <Edit className="h-3 w-3 mr-1" />
                     Edit
@@ -359,7 +500,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                     variant="outline"
                     size="sm"
                     className="text-destructive hover:text-destructive bg-transparent"
-                    onClick={() => setDeleteCompanyId(company.id)}
+                    onClick={() => setDeleteCompanyId(record.id)}
                   >
                     <Trash2 className="h-3 w-3" />
                   </Button>
@@ -397,6 +538,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
     </div>
   )
 }

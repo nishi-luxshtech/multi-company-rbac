@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ArrowRight, CheckCircle2, Network, WorkflowIcon, LayoutGrid, List } from "lucide-react"
-import { workflowStorage, type Workflow, initializeDefaultWorkflow } from "@/lib/workflow-storage"
+import { workflowsApi } from "@/lib/api/services/workflows-api.service"
+import type { WorkflowApiResponse } from "@/lib/api/types/workflow.types"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Dialog,
@@ -23,7 +24,9 @@ interface WorkflowSelectorProps {
 }
 
 export function WorkflowSelector({ onSelectWorkflow, onSelectCanvasWorkflow, onCancel }: WorkflowSelectorProps) {
-  const [workflows, setWorkflows] = useState<Workflow[]>([])
+  const [workflows, setWorkflows] = useState<WorkflowApiResponse[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null)
   const [canvasWorkflows, setCanvasWorkflows] = useState<string[]>([])
   const [selectionMode, setSelectionMode] = useState<"single" | "canvas">("single")
@@ -64,18 +67,26 @@ export function WorkflowSelector({ onSelectWorkflow, onSelectCanvasWorkflow, onC
   }, [])
 
   useEffect(() => {
-    console.log("WorkflowSelector mounted")
-    initializeDefaultWorkflow()
-    const activeWorkflows = workflowStorage.getActive()
-    console.log("Active workflows:", activeWorkflows.length)
-    setWorkflows(activeWorkflows)
-
-    loadCanvasWorkflows()
-
-    // Auto-select if only one workflow
-    if (activeWorkflows.length === 1) {
-      setSelectedWorkflowId(activeWorkflows[0].id)
+    const fetchWorkflows = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const data = await workflowsApi.list(true)
+        setWorkflows(data)
+        if (data.length === 1) {
+          setSelectedWorkflowId(data[0].id)
+        }
+      } catch (err: any) {
+        console.error("Failed to load workflows from API", err)
+        setError(err?.message || "Failed to load workflows. Please try again.")
+      } finally {
+        setLoading(false)
+      }
     }
+
+    console.log("WorkflowSelector mounted - loading workflows from API")
+    fetchWorkflows()
+    loadCanvasWorkflows()
   }, [loadCanvasWorkflows])
 
   useEffect(() => {
@@ -164,7 +175,22 @@ export function WorkflowSelector({ onSelectWorkflow, onSelectCanvasWorkflow, onC
         <p className="text-muted-foreground mt-2">Choose how you want to create your company</p>
       </div>
 
-      {workflows.length === 0 ? (
+      {loading ? (
+        <Card className="p-12">
+          <div className="text-center space-y-4">
+            <p className="text-muted-foreground">Loading workflows...</p>
+          </div>
+        </Card>
+      ) : error ? (
+        <Card className="p-12">
+          <div className="text-center space-y-4">
+            <p className="text-red-500 font-medium">{error}</p>
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Reload
+            </Button>
+          </div>
+        </Card>
+      ) : workflows.length === 0 ? (
         <Card className="p-12">
           <div className="text-center space-y-4">
             <p className="text-muted-foreground">No active workflows available</p>

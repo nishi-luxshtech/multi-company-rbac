@@ -46,7 +46,7 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
       // Try to load from dynamic workflow API first
       const dynamicWorkflows = await WorkflowBridgeService.getAllWorkflows()
       
-      if (dynamicWorkflows.length > 0) {
+      if (dynamicWorkflows && dynamicWorkflows.length > 0) {
         // Convert dynamic workflows to frontend format
         const convertedWorkflows = dynamicWorkflows.map(wf => ({
           id: wf.id,
@@ -77,17 +77,60 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
           category: wf.category,
         }))
         setWorkflows(convertedWorkflows)
+        console.log(`✓ Loaded ${convertedWorkflows.length} workflows from server`)
       } else {
-        // Fallback to localStorage
+        // No workflows from API, try localStorage
         const allWorkflows = workflowStorage.getAll()
-        setWorkflows(allWorkflows)
+        if (allWorkflows.length > 0) {
+          setWorkflows(allWorkflows)
+          console.log(`✓ Loaded ${allWorkflows.length} workflows from localStorage`)
+        } else {
+          setWorkflows([])
+          console.log("No workflows found in API or localStorage")
+        }
       }
-    } catch (err) {
-      console.error("Failed to load workflows from API, falling back to localStorage:", err)
+    } catch (err: any) {
+      console.error("Failed to load workflows from API:", err)
+      console.error("Error details:", {
+        message: err.message,
+        status: err.status,
+        response: err.response?.data,
+      })
+      
+      // Handle authentication errors
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        const errorDetail = err.response?.data?.detail || err.message || ""
+        if (errorDetail.includes("token") || errorDetail.includes("Invalid") || errorDetail.includes("expired")) {
+          setError("Authentication failed. Please log in again.")
+          // Clear invalid token
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("auth_token")
+            localStorage.removeItem("user")
+            // Redirect to login after a short delay
+            setTimeout(() => {
+              window.location.href = "/"
+            }, 2000)
+          }
+        } else {
+          setError(`Failed to load workflows: ${errorDetail}`)
+        }
+      } else {
+        setError(`Failed to load workflows from server: ${err.message || "Unknown error"}. Using local data.`)
+      }
+      
       // Fallback to localStorage on error
       const allWorkflows = workflowStorage.getAll()
-      setWorkflows(allWorkflows)
-      setError("Failed to load workflows from server. Using local data.")
+      if (allWorkflows.length > 0) {
+        setWorkflows(allWorkflows)
+        // Only show error if we have localStorage data as fallback
+        const errorMessage = err.response?.data?.detail || err.message || "Unknown error"
+        setError(`Failed to load workflows from server: ${errorMessage}. Using local data.`)
+      } else {
+        // No localStorage data either - show the actual error
+        const errorMessage = err.response?.data?.detail || err.message || "Failed to load workflows"
+        setError(`Failed to load workflows: ${errorMessage}`)
+        setWorkflows([])
+      }
     } finally {
       setLoading(false)
     }

@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { ArrowLeft, ArrowRight, Check, X, Loader2 } from "lucide-react"
+import { ArrowLeft, ArrowRight, Check, X, Loader2, AlertCircle } from "lucide-react"
 import { workflowStorage, type Workflow, type WorkflowField } from "@/lib/workflow-storage"
 import { WorkflowBridgeService } from "@/lib/api/services/workflow-bridge.service"
 import { workflowInstanceAPI } from "@/lib/api/services/workflow-instance-api.service"
+import { dynamicWorkflowAPI } from "@/lib/api/services/dynamic-workflow-api.service"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
@@ -19,6 +20,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { storageService, type WorkflowCompany } from "@/lib/storage-service"
 import { useToast } from "@/hooks/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { validateStep as validateStepUtil, validateField } from "@/lib/validation-utils"
+import { useContext } from "react"
+import { AuthContext, type Company } from "@/lib/auth-context"
 
 interface DynamicCompanyWizardProps {
   workflowId: string
@@ -40,13 +44,27 @@ export function DynamicCompanyWizard({
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set())
+  const [validatedSteps, setValidatedSteps] = useState<Set<number>>(new Set())
+  const [stepValidationErrors, setStepValidationErrors] = useState<Record<number, string[]>>({})
+  const [apiValidationErrors, setApiValidationErrors] = useState<Record<string, string>>({})
+  const [apiValidationErrorFields, setApiValidationErrorFields] = useState<Set<string>>(new Set())
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isValidating, setIsValidating] = useState(false)
   const { toast } = useToast()
+  
+  // Safely get currentCompany from auth context if available
+  // Use useContext directly to avoid throwing error if not in provider
+  const authContext = useContext(AuthContext)
+  const currentCompany: Company | null = authContext?.currentCompany || null
 
   useEffect(() => {
     setCurrentStep(0)
     setErrors({})
     setCompletedSteps(new Set())
+    setValidatedSteps(new Set())
+    setStepValidationErrors({})
+    setApiValidationErrors({})
+    setApiValidationErrorFields(new Set())
     loadWorkflow()
   }, [workflowId])
 
@@ -188,7 +206,7 @@ export function DynamicCompanyWizard({
     )
   }
 
-  const progress = (completedSteps.size / workflow.steps.length) * 100
+  const progress = (validatedSteps.size / workflow.steps.length) * 100
 
   const isCurrentStepValid = () => {
     const requiredFields = (currentStepData.fields || []).filter((field) => field.required)
@@ -200,54 +218,62 @@ export function DynamicCompanyWizard({
   }
 
   const validateStep = () => {
-    const newErrors: Record<string, string> = {}
-    ;(currentStepData.fields || []).forEach((field) => {
-      if (field.required && !formData[field.id]) {
-        newErrors[field.id] = `${field.label} is required`
-      }
-      if (field.type === "email" && formData[field.id]) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-        if (!emailRegex.test(formData[field.id])) {
-          newErrors[field.id] = "Invalid email address"
-        }
-      }
-      if (field.type === "url" && formData[field.id]) {
-        try {
-          new URL(formData[field.id])
-        } catch {
-          newErrors[field.id] = "Invalid URL"
-        }
-      }
-      if (field.validation) {
-        const value = formData[field.id]
-        if (field.validation.min !== undefined && value && value.length < field.validation.min) {
-          newErrors[field.id] = `Minimum ${field.validation.min} characters required`
-        }
-        if (field.validation.max !== undefined && value && value.length > field.validation.max) {
-          newErrors[field.id] = `Maximum ${field.validation.max} characters allowed`
-        }
-      }
-    })
+    const newErrors = validateStepUtil(
+      currentStepData.fields || [],
+      formData
+    )
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
   const handleStepSubmit = () => {
-    if (!validateStep()) {
+    // Only use frontend validation for each step
+    const isValid = validateStep()
+    
+    if (!isValid) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields correctly.",
+        description: "Please fix the errors before proceeding.",
         variant: "destructive",
       })
       return
     }
 
-    console.log(`Marking step ${currentStep + 1} as complete:`, currentStepData.name)
+    // Mark step as validated (frontend validation only)
+    setValidatedSteps((prev) => new Set(prev).add(currentStep))
     setCompletedSteps((prev) => new Set(prev).add(currentStep))
+    
+    // Clear API validation errors for this step if user fixes them
+    const stepFields = currentStepData.fields || []
+    const updatedApiErrors = { ...apiValidationErrors }
+    const updatedErrorFields = new Set(apiValidationErrorFields)
+    let hasChanges = false
+
+    stepFields.forEach((field) => {
+      if (updatedApiErrors[field.id]) {
+        delete updatedApiErrors[field.id]
+        updatedErrorFields.delete(field.id)
+        hasChanges = true
+      }
+    })
+
+    if (hasChanges) {
+      setApiValidationErrors(updatedApiErrors)
+      setApiValidationErrorFields(updatedErrorFields)
+    }
+
+    // Clear step validation errors if fixed
+    setStepValidationErrors((prev) => {
+      const newErrors = { ...prev }
+      delete newErrors[currentStep]
+      return newErrors
+    })
+
+    console.log(`Step ${currentStep + 1} validated (frontend):`, currentStepData.name)
 
     toast({
       title: "Step Validated",
-      description: `${currentStepData.name} is ready for submission.`,
+      description: `${currentStepData.name} has been validated and is ready for submission.`,
     })
   }
 
@@ -267,153 +293,200 @@ export function DynamicCompanyWizard({
   }
 
   const handleFinalSubmit = async () => {
-    if (completedSteps.size !== workflow.steps.length) {
+    // Check if all steps are validated (frontend validation)
+    if (validatedSteps.size !== workflow.steps.length) {
       toast({
-        title: "Incomplete Workflow",
-        description: "Please complete and validate all steps before final submission.",
+        title: "Incomplete Validation",
+        description: `Please validate all ${workflow.steps.length} steps before final submission. ${validatedSteps.size}/${workflow.steps.length} validated.`,
         variant: "destructive",
       })
       return
     }
 
+    // Final validation with API using all form data before submitting
     setIsSubmitting(true)
-    console.log("Starting batch submission of all steps...")
-
-    const stepApiEndpoints: Record<string, string> = {
-      "General Information": "/api/company/general-info",
-      "Company Information": "/api/company/basic-info",
-      Addresses: "/api/company/address",
-      "Address Details": "/api/company/address",
-      Communication: "/api/company/communication",
-      "Message Setup": "/api/company/message-setup",
-      Currency: "/api/company/currency",
-      "Currency Rates": "/api/company/currency-rates",
-      Employees: "/api/company/employees",
-      Managers: "/api/company/managers",
-      Admins: "/api/company/admins",
-      "Site Creation": "/api/company/site",
-    }
-
+    setIsValidating(true)
+    
     try {
-      const apiCalls = workflow.steps.map((step, index) => {
-        const stepFields = step.fields || []
-        const stepData: Record<string, any> = {}
+      // Prepare complete data for validation
+      const completeData: Record<string, any> = {
+        company_id: currentCompany?.id ? parseInt(currentCompany.id) : companyId || 1,
+      }
 
-        // Extract only the fields for this step
-        stepFields.forEach((field) => {
-          stepData[field.id] = formData[field.id]
+      // Map all form data to field names
+      // The API expects field names in snake_case format (matching workflow field labels)
+      workflow.steps.forEach((step) => {
+        step.fields.forEach((field) => {
+          const value = formData[field.id]
+          if (value !== undefined && value !== null && value !== "") {
+            // Convert field label to snake_case for API (e.g., "State/Province" -> "state_province")
+            // This matches what the backend expects
+            const fieldName = field.label
+              ?.toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "") || field.id
+            completeData[fieldName] = value
+          }
         })
-
-        const apiEndpoint = stepApiEndpoints[step.name] || `/api/company/step-${index + 1}`
-
-        console.log(`Preparing API call for step ${index + 1}: ${step.name} -> ${apiEndpoint}`)
-
-        // Return the API call promise
-        return fetch(apiEndpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            stepName: step.name,
-            stepIndex: index,
-            stepData: stepData,
-            allFormData: formData,
-          }),
-        })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error(`API call failed for ${step.name}`)
-            }
-            return response.json()
-          })
-          .then((data) => {
-            console.log(`✓ Step ${index + 1} (${step.name}) submitted successfully`)
-            return { success: true, stepName: step.name, data }
-          })
-          .catch((error) => {
-            console.error(`✗ Step ${index + 1} (${step.name}) failed:`, error)
-            return { success: false, stepName: step.name, error: error.message }
-          })
       })
 
-      console.log(`Executing ${apiCalls.length} API calls in parallel...`)
-      const results = await Promise.all(apiCalls)
+      // Validate all data with API before submitting
+      console.log("Validating all data with API before submission...")
+      const finalValidation = await dynamicWorkflowAPI.validateTableData(
+        workflowId,
+        completeData,
+        false
+      )
 
-      const successCount = results.filter((r) => r.success).length
-      const failureCount = results.filter((r) => !r.success).length
+      if (!finalValidation.is_valid) {
+        // Map API validation errors to form fields
+        const apiErrors: Record<string, string> = {}
+        const errorFieldIds = new Set<string>()
+        const stepErrors: Record<number, string[]> = {}
 
-      console.log(`Batch submission complete: ${successCount} succeeded, ${failureCount} failed`)
-
-      const companyId = `comp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      const companyName =
-        formData.company_name || formData.name || formData.companyName || `Company ${new Date().toLocaleDateString()}`
-
-      const workflowCompany: WorkflowCompany = {
-        id: companyId,
-        name: companyName,
-        description: `Created via ${workflow?.name || "workflow"}`,
-        workflowId: workflowId,
-        workflowName: workflow?.name || "Unknown Workflow",
-        formData: formData,
-        createdAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-      }
-
-      storageService.saveWorkflowCompany(workflowCompany)
-      console.log("Company saved to localStorage:", companyId)
-
-      if (failureCount > 0) {
-        const failedSteps = results.filter((r) => !r.success).map((r) => r.stepName)
-        toast({
-          title: "Company Saved (API Errors)",
-          description: `${companyName} saved to localStorage. API calls failed (expected in prototype): ${failedSteps.join(", ")}`,
+        finalValidation.errors.forEach((error) => {
+          // Normalize error field name (remove special chars, convert to lowercase)
+          const errorFieldName = error.field_name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "")
+          
+          // Search through all workflow steps to find matching field
+          workflow.steps.forEach((step, stepIndex) => {
+            step.fields.forEach((field) => {
+              // Try multiple matching strategies
+              const fieldLabelSnake = field.label
+                ?.toLowerCase()
+                .replace(/[^a-z0-9]+/g, "_")
+                .replace(/^_+|_+$/g, "") || ""
+              const fieldNameSnake = field.id
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "_")
+                .replace(/^_+|_+$/g, "")
+              
+              // Match by:
+              // 1. Field name (snake_case of label) - most common
+              // 2. Field ID (if it matches)
+              // 3. Exact label match
+              // 4. Field name from API matches field label
+              if (
+                errorFieldName === fieldLabelSnake ||
+                errorFieldName === fieldNameSnake ||
+                error.field_name === field.id ||
+                error.field_label === field.label ||
+                error.field_name.toLowerCase() === field.label?.toLowerCase()
+              ) {
+                apiErrors[field.id] = error.error_message
+                errorFieldIds.add(field.id)
+                
+                // Track which step has errors
+                if (!stepErrors[stepIndex]) {
+                  stepErrors[stepIndex] = []
+                }
+                stepErrors[stepIndex].push(`${field.label || field.id}: ${error.error_message}`)
+              }
+            })
+          })
         })
-      } else {
+
+        // Set errors in state
+        setApiValidationErrors(apiErrors)
+        setApiValidationErrorFields(errorFieldIds)
+        setStepValidationErrors(stepErrors)
+        setErrors(apiErrors)
+
+        // Find the first step with errors and navigate to it
+        const firstErrorStep = Object.keys(stepErrors)[0]
+        if (firstErrorStep) {
+          setCurrentStep(parseInt(firstErrorStep))
+        }
+
+        // Show validation errors
+        const errorMessages = finalValidation.errors.map((e) => `${e.field_label}: ${e.error_message}`).join(", ")
         toast({
-          title: "Company Created Successfully",
-          description: `${companyName} has been created. All ${workflow.steps.length} steps submitted successfully.`,
+          title: "Validation Failed",
+          description: `Please fix ${finalValidation.errors.length} error(s). Navigate to the highlighted fields to fix them.`,
+          variant: "destructive",
         })
+        setIsValidating(false)
+        setIsSubmitting(false)
+        return
       }
 
-      onComplete()
-    } catch (error) {
-      console.error("Batch submission error:", error)
+      // Clear any previous API validation errors if validation passes
+      setApiValidationErrors({})
+      setApiValidationErrorFields(new Set())
+      setStepValidationErrors({})
 
-      const companyId = `comp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-      const companyName =
-        formData.company_name || formData.name || formData.companyName || `Company ${new Date().toLocaleDateString()}`
-
-      const workflowCompany: WorkflowCompany = {
-        id: companyId,
-        name: companyName,
-        description: `Created via ${workflow?.name || "workflow"}`,
-        workflowId: workflowId,
-        workflowName: workflow?.name || "Unknown Workflow",
-        formData: formData,
-        createdAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-      }
-
-      storageService.saveWorkflowCompany(workflowCompany)
-      console.log("Company saved to localStorage despite errors:", companyId)
+      // All validations passed, now submit to API
+      console.log("All validations passed, submitting to API...")
+      
+      const result = await dynamicWorkflowAPI.createTableRecord(workflowId, completeData)
+      
+      console.log("Company created successfully:", result)
 
       toast({
-        title: "Company Saved Locally",
-        description: `${companyName} has been saved to localStorage. API submission failed (expected in prototype).`,
+        title: "Company Created Successfully",
+        description: `Company has been created using workflow: ${workflow.name}`,
       })
 
       onComplete()
+    } catch (error: any) {
+      console.error("Final submission error:", error)
+      toast({
+        title: "Submission Failed",
+        description: error.message || "Failed to create company. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setIsSubmitting(false)
+      setIsValidating(false)
+    }
+  }
+
+  // Helper function to update form data and clear API errors for that field
+  const updateFormData = (fieldId: string, value: any) => {
+    setFormData({ ...formData, [fieldId]: value })
+    
+    // Clear API validation error for this field if user is fixing it
+    if (apiValidationErrors[fieldId]) {
+      const updatedApiErrors = { ...apiValidationErrors }
+      delete updatedApiErrors[fieldId]
+      setApiValidationErrors(updatedApiErrors)
+      
+      const updatedErrorFields = new Set(apiValidationErrorFields)
+      updatedErrorFields.delete(fieldId)
+      setApiValidationErrorFields(updatedErrorFields)
+      
+      // Also clear from step errors if this field's error is resolved
+      if (workflow) {
+        workflow.steps.forEach((step, stepIndex) => {
+          if (step.fields.some((f) => f.id === fieldId) && stepValidationErrors[stepIndex]) {
+            const stepFields = step.fields || []
+            const hasOtherErrors = stepFields.some(
+              (f) => f.id !== fieldId && updatedApiErrors[f.id]
+            )
+            if (!hasOtherErrors) {
+              setStepValidationErrors((prev) => {
+                const newErrors = { ...prev }
+                delete newErrors[stepIndex]
+                return newErrors
+              })
+            }
+          }
+        })
+      }
     }
   }
 
   const renderField = (field: WorkflowField) => {
     const value = formData[field.id]
-    const error = errors[field.id]
+    const error = errors[field.id] || apiValidationErrors[field.id]
+    const hasApiError = apiValidationErrorFields.has(field.id)
 
     const commonProps = {
       id: field.id,
-      className: `h-11 ${error ? "border-red-500" : ""}`,
+      className: `h-11 ${error || hasApiError ? "border-red-500 ring-2 ring-red-200" : ""}`,
     }
 
     switch (field.type) {
@@ -423,7 +496,7 @@ export function DynamicCompanyWizard({
             <Checkbox
               id={field.id}
               checked={value || false}
-              onCheckedChange={(checked) => setFormData({ ...formData, [field.id]: checked })}
+              onCheckedChange={(checked) => updateFormData(field.id, checked)}
             />
             <Label htmlFor={field.id} className="text-sm font-normal cursor-pointer">
               {field.label}
@@ -433,7 +506,7 @@ export function DynamicCompanyWizard({
 
       case "select":
         return (
-          <Select value={value || ""} onValueChange={(val) => setFormData({ ...formData, [field.id]: val })}>
+          <Select value={value || ""} onValueChange={(val) => updateFormData(field.id, val)}>
             <SelectTrigger {...commonProps}>
               <SelectValue placeholder={field.placeholder || `Select ${field.label}`} />
             </SelectTrigger>
@@ -452,7 +525,7 @@ export function DynamicCompanyWizard({
           <Textarea
             {...commonProps}
             value={value || ""}
-            onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+            onChange={(e) => updateFormData(field.id, e.target.value)}
             placeholder={field.placeholder}
             rows={4}
             className={error ? "border-red-500" : ""}
@@ -465,7 +538,7 @@ export function DynamicCompanyWizard({
             {...commonProps}
             type="date"
             value={value || ""}
-            onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+            onChange={(e) => updateFormData(field.id, e.target.value)}
           />
         )
 
@@ -475,7 +548,7 @@ export function DynamicCompanyWizard({
             {...commonProps}
             type="number"
             value={value || ""}
-            onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+            onChange={(e) => updateFormData(field.id, e.target.value)}
             placeholder={field.placeholder}
             min={field.validation?.min}
             max={field.validation?.max}
@@ -491,7 +564,7 @@ export function DynamicCompanyWizard({
             <Switch
               id={field.id}
               checked={value || false}
-              onCheckedChange={(checked) => setFormData({ ...formData, [field.id]: checked })}
+              onCheckedChange={(checked) => updateFormData(field.id, checked)}
             />
           </div>
         )
@@ -504,7 +577,7 @@ export function DynamicCompanyWizard({
             </div>
             <Slider
               value={[value || field.validation?.min || 0]}
-              onValueChange={(vals) => setFormData({ ...formData, [field.id]: vals[0] })}
+              onValueChange={(vals) => updateFormData(field.id, vals[0])}
               min={field.validation?.min || 0}
               max={field.validation?.max || 100}
               step={field.config?.step || 1}
@@ -518,7 +591,7 @@ export function DynamicCompanyWizard({
 
       case "radio":
         return (
-          <RadioGroup value={value || ""} onValueChange={(val) => setFormData({ ...formData, [field.id]: val })}>
+          <RadioGroup value={value || ""} onValueChange={(val) => updateFormData(field.id, val)}>
             {field.options?.map((option, idx) => (
               <div key={idx} className="flex items-center space-x-2">
                 <RadioGroupItem value={option} id={`${field.id}-${idx}`} />
@@ -537,7 +610,7 @@ export function DynamicCompanyWizard({
               <button
                 key={i}
                 type="button"
-                onClick={() => setFormData({ ...formData, [field.id]: i + 1 })}
+                onClick={() => updateFormData(field.id, i + 1)}
                 className="text-3xl hover:scale-110 transition-transform"
               >
                 {i < (value || 0) ? "⭐" : "☆"}
@@ -553,7 +626,7 @@ export function DynamicCompanyWizard({
             {...commonProps}
             type="time"
             value={value || ""}
-            onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+            onChange={(e) => updateFormData(field.id, e.target.value)}
           />
         )
 
@@ -566,7 +639,7 @@ export function DynamicCompanyWizard({
                 type="date"
                 className={`h-11 mt-1 ${error ? "border-red-500" : ""}`}
                 value={value?.start || ""}
-                onChange={(e) => setFormData({ ...formData, [field.id]: { ...value, start: e.target.value } })}
+                onChange={(e) => updateFormData(field.id, { ...value, start: e.target.value })}
               />
             </div>
             <div>
@@ -575,7 +648,7 @@ export function DynamicCompanyWizard({
                 type="date"
                 className={`h-11 mt-1 ${error ? "border-red-500" : ""}`}
                 value={value?.end || ""}
-                onChange={(e) => setFormData({ ...formData, [field.id]: { ...value, end: e.target.value } })}
+                onChange={(e) => updateFormData(field.id, { ...value, end: e.target.value })}
               />
             </div>
           </div>
@@ -590,7 +663,7 @@ export function DynamicCompanyWizard({
               multiple={field.config?.multiple}
               onChange={(e) => {
                 const files = Array.from(e.target.files || [])
-                setFormData({ ...formData, [field.id]: files })
+                updateFormData(field.id, files)
               }}
               className="h-11"
             />
@@ -606,13 +679,13 @@ export function DynamicCompanyWizard({
             <Input
               type="color"
               value={value || "#000000"}
-              onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+              onChange={(e) => updateFormData(field.id, e.target.value)}
               className="h-11 w-20"
             />
             <Input
               type="text"
               value={value || ""}
-              onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+              onChange={(e) => updateFormData(field.id, e.target.value)}
               placeholder="#000000"
               className="h-11 flex-1"
             />
@@ -622,7 +695,7 @@ export function DynamicCompanyWizard({
       case "combobox":
       case "multiselect":
         return (
-          <Select value={value || ""} onValueChange={(val) => setFormData({ ...formData, [field.id]: val })}>
+          <Select value={value || ""} onValueChange={(val) => updateFormData(field.id, val)}>
             <SelectTrigger {...commonProps}>
               <SelectValue
                 placeholder={
@@ -648,7 +721,7 @@ export function DynamicCompanyWizard({
             {...commonProps}
             type={field.type}
             value={value || ""}
-            onChange={(e) => setFormData({ ...formData, [field.id]: e.target.value })}
+            onChange={(e) => updateFormData(field.id, e.target.value)}
             placeholder={field.placeholder}
           />
         )
@@ -677,7 +750,7 @@ export function DynamicCompanyWizard({
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium">Tab View Mode</span>
                 <span className="text-muted-foreground">
-                  {completedSteps.size} of {workflow.steps.length} steps validated
+                {validatedSteps.size} of {workflow.steps.length} steps validated
                 </span>
               </div>
               <Progress value={progress} className="h-2" />
@@ -692,10 +765,20 @@ export function DynamicCompanyWizard({
               <TabsTrigger
                 key={step.id}
                 value={index.toString()}
-                className={`gap-2 ${completedSteps.has(index) ? "bg-green-50 text-green-700 data-[state=active]:bg-green-100" : ""}`}
+                  className={`gap-2 ${
+                  validatedSteps.has(index) && !stepValidationErrors[index]
+                    ? "bg-green-50 text-green-700 data-[state=active]:bg-green-100"
+                    : stepValidationErrors[index]
+                      ? "bg-red-50 text-red-700 data-[state=active]:bg-red-100 border-2 border-red-300"
+                      : ""
+                }`}
               >
-                {completedSteps.has(index) && <Check className="h-3 w-3" />}
+                {validatedSteps.has(index) && !stepValidationErrors[index] && <Check className="h-3 w-3" />}
+                {stepValidationErrors[index] && <AlertCircle className="h-3 w-3" />}
                 <span>{step.name}</span>
+                {stepValidationErrors[index] && (
+                  <span className="ml-1 text-xs">({stepValidationErrors[index].length})</span>
+                )}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -710,10 +793,26 @@ export function DynamicCompanyWizard({
                         <h3 className="text-xl font-semibold">{step.name}</h3>
                         {step.description && <p className="text-muted-foreground mt-1">{step.description}</p>}
                       </div>
-                      {completedSteps.has(index) && (
+                      {validatedSteps.has(index) && (
                         <div className="flex items-center gap-2 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
                           <Check className="h-4 w-4" />
                           Validated
+                        </div>
+                      )}
+                      {stepValidationErrors[index] && (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-red-100 text-red-700 rounded-full text-sm font-medium">
+                          <AlertCircle className="h-4 w-4" />
+                          {stepValidationErrors[index].length} Error(s)
+                        </div>
+                      )}
+                      {apiValidationErrorFields.size > 0 && Object.keys(stepValidationErrors).includes(index.toString()) && (
+                        <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-sm font-medium text-red-800 mb-2">API Validation Errors:</p>
+                          <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+                            {stepValidationErrors[index]?.map((err, idx) => (
+                              <li key={idx}>{err}</li>
+                            ))}
+                          </ul>
                         </div>
                       )}
                     </div>
@@ -736,7 +835,11 @@ export function DynamicCompanyWizard({
                               </Label>
                             )}
                             {renderField(field)}
-                            {errors[field.id] && <p className="text-sm text-red-600">{errors[field.id]}</p>}
+                            {(errors[field.id] || apiValidationErrors[field.id]) && (
+                              <p className="text-sm text-red-600 font-medium">
+                                {errors[field.id] || apiValidationErrors[field.id]}
+                              </p>
+                            )}
                           </div>
                         )
                       })}
@@ -747,8 +850,10 @@ export function DynamicCompanyWizard({
 
               <div className="flex justify-between items-center mt-6">
                 <div className="text-sm text-muted-foreground">
-                  {completedSteps.has(index)
+                  {validatedSteps.has(index)
                     ? "This step has been validated. You can edit and revalidate if needed."
+                    : stepValidationErrors[index]
+                      ? `Please fix ${stepValidationErrors[index].length} error(s) before validating.`
                     : "Complete all required fields and validate this step."}
                 </div>
                 <Button
@@ -758,30 +863,39 @@ export function DynamicCompanyWizard({
                   className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Check className="mr-2 h-4 w-4" />
-                  {completedSteps.has(index) ? "Revalidate Step" : "Validate Step"}
+                  {validatedSteps.has(index) ? "Revalidate Step" : "Validate Step"}
                 </Button>
               </div>
             </TabsContent>
           ))}
         </Tabs>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-3">
+          {apiValidationErrorFields.size > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertCircle className="h-4 w-4" />
+              <span>
+                {apiValidationErrorFields.size} field(s) need to be fixed before submission
+              </span>
+            </div>
+          )}
           <Button
             onClick={handleFinalSubmit}
             size="lg"
-            disabled={completedSteps.size !== workflow.steps.length || isSubmitting}
+            disabled={validatedSteps.size !== workflow.steps.length || isSubmitting || isValidating || apiValidationErrorFields.size > 0}
             className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting ? (
+            {isSubmitting || isValidating ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Submitting All Steps...
+                {isValidating ? "Validating..." : "Submitting..."}
               </>
             ) : (
               <>
                 <Check className="mr-2 h-4 w-4" />
                 Submit All {workflow.steps.length} Steps
-                {completedSteps.size !== workflow.steps.length && ` (${completedSteps.size}/${workflow.steps.length})`}
+                {validatedSteps.size !== workflow.steps.length && ` (${validatedSteps.size}/${workflow.steps.length})`}
+                {apiValidationErrorFields.size > 0 && ` - ${apiValidationErrorFields.size} error(s) to fix`}
               </>
             )}
           </Button>
@@ -822,13 +936,21 @@ export function DynamicCompanyWizard({
                   className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
                     index === currentStep
                       ? "bg-blue-600 text-white"
-                      : index < currentStep
+                      : validatedSteps.has(index) && !stepValidationErrors[index]
                         ? "bg-green-100 text-green-700"
+                        : stepValidationErrors[index]
+                          ? "bg-red-100 text-red-700 border-2 border-red-300"
+                          : index < currentStep
+                            ? "bg-gray-200 text-gray-600"
                         : "bg-gray-100 text-gray-600"
                   }`}
                 >
-                  {index < currentStep && <Check className="h-3 w-3" />}
+                  {validatedSteps.has(index) && !stepValidationErrors[index] && <Check className="h-3 w-3" />}
+                  {stepValidationErrors[index] && <AlertCircle className="h-3 w-3" />}
                   <span>{step.name}</span>
+                  {stepValidationErrors[index] && (
+                    <span className="ml-1 text-xs font-bold">({stepValidationErrors[index].length})</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -865,7 +987,11 @@ export function DynamicCompanyWizard({
                       </Label>
                     )}
                     {renderField(field)}
-                    {errors[field.id] && <p className="text-sm text-red-600">{errors[field.id]}</p>}
+                    {(errors[field.id] || apiValidationErrors[field.id]) && (
+                      <p className="text-sm text-red-600 font-medium">
+                        {errors[field.id] || apiValidationErrors[field.id]}
+                      </p>
+                    )}
                   </div>
                 )
               })}
@@ -874,25 +1000,67 @@ export function DynamicCompanyWizard({
         </CardContent>
       </Card>
 
+      {/* Show API validation errors summary if any */}
+      {apiValidationErrorFields.size > 0 && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="text-sm font-semibold text-red-800 mb-2">
+                  {apiValidationErrorFields.size} field(s) need to be fixed before submission
+                </h4>
+                <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+                  {Object.entries(apiValidationErrors).map(([fieldId, errorMsg]) => {
+                    const field = workflow.steps
+                      .flatMap((s) => s.fields || [])
+                      .find((f) => f.id === fieldId)
+                    return (
+                      <li key={fieldId}>
+                        <strong>{field?.label || fieldId}:</strong> {errorMsg}
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Navigation */}
       <div className="flex flex-col sm:flex-row gap-3 justify-between">
         <Button variant="outline" onClick={handleBack} disabled={currentStep === 0} size="lg">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Previous
         </Button>
-        <Button onClick={handleNext} size="lg" className="bg-blue-600 hover:bg-blue-700">
-          {currentStep === workflow.steps.length - 1 ? (
-            <>
-              <Check className="mr-2 h-4 w-4" />
-              Complete
+        <div className="flex gap-3">
+          {apiValidationErrorFields.size > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              <AlertCircle className="h-4 w-4" />
+              <span>{apiValidationErrorFields.size} error(s) to fix</span>
+            </div>
+          )}
+          <Button
+            onClick={handleFinalSubmit}
+            size="lg"
+            disabled={validatedSteps.size !== workflow.steps.length || isSubmitting || isValidating || apiValidationErrorFields.size > 0}
+            className="bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting || isValidating ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {isValidating ? "Validating..." : "Submitting..."}
             </>
           ) : (
             <>
-              Next
-              <ArrowRight className="ml-2 h-4 w-4" />
+                <Check className="mr-2 h-4 w-4" />
+                Submit All Steps
+                {apiValidationErrorFields.size > 0 && ` (${apiValidationErrorFields.size} errors)`}
             </>
           )}
         </Button>
+        </div>
       </div>
     </div>
   )

@@ -116,8 +116,11 @@ export class WorkflowBridgeService {
    */
   static async getAllWorkflows(): Promise<FrontendWorkflow[]> {
     try {
-      // Use core workflows listing endpoint: GET /workflows/?active_only=true
-      const apiWorkflows: WorkflowApiResponse[] = await workflowsApi.list(true)
+      // Use dynamic workflow builder endpoint: GET /workflows/builder/?active_only=true
+      // This returns DynamicWorkflowResponse[] which is the correct format
+      const { dynamicWorkflowAPI } = await import("./dynamic-workflow-api.service")
+      const apiWorkflows = await dynamicWorkflowAPI.listWorkflows(true)
+      
       return apiWorkflows.map((wf) => ({
         id: wf.id,
         name: wf.name,
@@ -126,19 +129,19 @@ export class WorkflowBridgeService {
           id: s.id,
           name: s.name,
           description: s.description || "",
-          order: s.step_order,
+          order: s.order || 0, // DynamicWorkflowStep uses 'order' field
           fields: (s.fields || []).map((f) => {
-            const vr = (f as any).validation_rules || (f as any).validation || undefined
-            const rawOptions = vr?.options || (f as any).options
+            const vr = f.validation
+            const rawOptions = vr?.options || f.options
             const normalizedOptions = Array.isArray(rawOptions)
               ? rawOptions.map((opt: any) => (typeof opt === "string" ? opt : opt?.label ?? opt?.value)).filter(Boolean)
               : undefined
             return {
-              id: (f as any).id,
-              label: (f as any).label ?? (f as any).field_label ?? (f as any).field_name ?? "",
-              type: ((f as any).type ?? (f as any).field_type ?? "text") as any,
-              required: (f as any).required ?? (f as any).is_required ?? false,
-              placeholder: (f as any).placeholder,
+              id: f.id,
+              label: f.label,
+              type: f.type as any,
+              required: f.required,
+              placeholder: f.placeholder,
               validation: vr
                 ? {
                     min: vr.min ?? vr.min_value ?? vr.min_length,

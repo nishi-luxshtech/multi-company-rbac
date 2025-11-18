@@ -45,8 +45,15 @@ export function ERPAuthProvider({ children }: { children: ReactNode }) {
       const response = await authAPI.login({ username, password })
       console.log("Login response received:", response)
 
+      // Validate token exists
+      if (!response.access_token) {
+        console.error("No access token in response:", response)
+        return false
+      }
+
       // Store token
       localStorage.setItem("auth_token", response.access_token)
+      console.log("Token stored in localStorage")
 
       // Since the backend might not have a /auth/me endpoint, we'll create a basic user object
       const currentUser: User = {
@@ -64,6 +71,9 @@ export function ERPAuthProvider({ children }: { children: ReactNode }) {
       return true
     } catch (error: any) {
       console.error("Login failed:", error?.response?.data || error?.message || error)
+      // Clear any existing invalid tokens
+      localStorage.removeItem("auth_token")
+      localStorage.removeItem("user")
       return false
     }
   }

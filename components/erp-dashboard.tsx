@@ -4,13 +4,24 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Building2, Users, CheckCircle2, Clock, TrendingUp, AlertCircle, ShieldAlert } from "lucide-react"
-import { companyAPI, userAPI, type Company, type User } from "@/lib/api-services"
+import { userAPI, type User } from "@/lib/api-services"
+import { dynamicWorkflowAPI } from "@/lib/api/services/dynamic-workflow-api.service"
+import type { AllMasterTableDataResponse } from "@/lib/api/types/dynamic-workflow.types"
 
 interface DashboardStats {
   totalCompanies: number
   completedCompanies: number
   inProgressCompanies: number
   totalUsers: number
+}
+
+interface CompanyRecord {
+  id: string | number
+  company_name: string
+  company_code?: string
+  is_complete?: boolean
+  onboarding_step?: number
+  [key: string]: any
 }
 
 export function ERPDashboard() {
@@ -20,7 +31,7 @@ export function ERPDashboard() {
     inProgressCompanies: 0,
     totalUsers: 0,
   })
-  const [recentCompanies, setRecentCompanies] = useState<Company[]>([])
+  const [recentCompanies, setRecentCompanies] = useState<CompanyRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -30,27 +41,58 @@ export function ERPDashboard() {
 
   const loadDashboardData = async () => {
     try {
-      const [companies, users] = await Promise.all([
-        companyAPI.getAll().catch((err) => {
+      const [masterDataResponse, users] = await Promise.all([
+        dynamicWorkflowAPI.getAllMasterTableData(
+          undefined, // company_id - get all
+          100, // limit_per_workflow
+          0, // offset_per_workflow
+          false // group_by_step
+        ).catch((err) => {
+          console.error("Failed to load master table data:", err)
           if (err.response?.status === 403) {
             throw new Error("You don't have permission to view companies")
           }
-          throw err
+          // Return empty response structure if error
+          return {
+            total_workflows: 0,
+            workflows_with_tables: 0,
+            total_records_across_all_workflows: 0,
+            workflow_data: {}
+          } as AllMasterTableDataResponse
         }),
-        userAPI.getAll().catch(() => [] as User[]),
+        userAPI.getAllUsers().catch(() => [] as User[]),
       ])
 
-      const completedCompanies = companies.filter((c) => c.is_complete).length
-      const inProgressCompanies = companies.filter((c) => !c.is_complete).length
+      // Flatten all records from all workflows
+      const allRecords: CompanyRecord[] = []
+      Object.values(masterDataResponse.workflow_data || {}).forEach((workflow) => {
+        if (workflow.records && workflow.records.length > 0) {
+          workflow.records.forEach((record: any) => {
+            allRecords.push({
+              id: record.id || record.company_id || `${workflow.workflow_id}-${Math.random()}`,
+              company_name: record.company_name || "N/A",
+              company_code: record.company_code || String(record.company_id || record.id || "N/A"),
+              is_complete: record.is_complete !== undefined 
+                ? record.is_complete 
+                : !!(record.company_name && record.company_code),
+              onboarding_step: record.onboarding_step || 9,
+              ...record
+            })
+          })
+        }
+      })
+
+      const completedCompanies = allRecords.filter((c) => c.is_complete).length
+      const inProgressCompanies = allRecords.filter((c) => !c.is_complete).length
 
       setStats({
-        totalCompanies: companies.length,
+        totalCompanies: allRecords.length,
         completedCompanies,
         inProgressCompanies,
         totalUsers: users.length,
       })
 
-      setRecentCompanies(companies.slice(0, 5))
+      setRecentCompanies(allRecords.slice(0, 5))
     } catch (error: any) {
       console.error("Failed to load dashboard data:", error)
       if (error.message?.includes("permission")) {

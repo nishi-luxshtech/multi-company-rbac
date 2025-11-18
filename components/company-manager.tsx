@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,12 +12,16 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Building2, Trash2, Edit, Users, TrendingUp } from "lucide-react"
 import { useAuth, type Company } from "@/lib/auth-context"
 import { storageService } from "@/lib/storage-service"
+import { workflowsApi } from "@/lib/api/services/workflows-api.service"
+import type { WorkflowApiResponse } from "@/lib/api/types/workflow.types"
 
 export function CompanyManager() {
   const { hasPermission, switchCompany, currentCompany } = useAuth()
   const [companies, setCompanies] = useState<Company[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
+  const [workflows, setWorkflows] = useState<WorkflowApiResponse[]>([])
+  const [workflowsLoading, setWorkflowsLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -30,6 +34,26 @@ export function CompanyManager() {
 
   const loadCompanies = () => {
     setCompanies(storageService.getCompanies())
+  }
+
+  const loadWorkflows = useCallback(async () => {
+    if (workflowsLoading || workflows.length) return
+    try {
+      setWorkflowsLoading(true)
+      const data = await workflowsApi.list(true)
+      setWorkflows(data)
+    } catch (error) {
+      console.error("Failed to load workflows", error)
+    } finally {
+      setWorkflowsLoading(false)
+    }
+  }, [workflowsLoading, workflows.length])
+
+  const handleAddCompanyClick = () => {
+    setShowForm(true)
+    if (!workflows.length) {
+      void loadWorkflows()
+    }
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -97,7 +121,7 @@ export function CompanyManager() {
             Manage companies and their hierarchies across your organization
           </p>
         </div>
-        <Button onClick={() => setShowForm(true)} className="hover-lift">
+        <Button onClick={handleAddCompanyClick} className="hover-lift">
           <Plus className="h-4 w-4 mr-2" />
           Add Company
         </Button>

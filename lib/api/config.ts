@@ -4,7 +4,7 @@
  */
 
 export const API_CONFIG = {
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "https://erp-r.onrender.com",
+  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "https://erp-wwhm.onrender.com/",
   apiVersion: process.env.NEXT_PUBLIC_API_VERSION || "v1",
   timeout: 30000, // 30 seconds
 } as const
@@ -16,14 +16,14 @@ export const API_ENDPOINTS = {
     logout: "/auth/logout",
   },
   
-  // Core Workflow Template endpoints (not builder)
+  // Core Workflow Template endpoints (using workflow builder endpoints)
   workflows: {
-    base: "/workflows",
-    list: () => "/workflows/",
-    get: (workflow_id: string) => `/workflows/${workflow_id}`,
-    update: (workflow_id: string) => `/workflows/${workflow_id}`,
-    delete: (workflow_id: string) => `/workflows/${workflow_id}`,
-    validate: (id: string) => `/workflows/${id}/validate`,
+    base: "/workflows/builder",
+    list: () => "/workflows/builder/",
+    get: (workflow_id: string) => `/workflows/builder/${workflow_id}`,
+    update: (workflow_id: string) => `/workflows/builder/${workflow_id}`,
+    delete: (workflow_id: string) => `/workflows/builder/${workflow_id}`,
+    validate: (id: string) => `/workflows/builder/${id}/validation`,
   },
   
   // Dynamic Workflow Builder endpoints (primary focus)
@@ -37,6 +37,9 @@ export const API_ENDPOINTS = {
     migrate: (id: string) => `/workflows/builder/${id}/migrate`,
     regenerateTable: (id: string) => `/workflows/builder/${id}/regenerate-table`,
     getTableData: (id: string) => `/workflows/builder/${id}/table-data`,
+    getAllMasterTableData: () => "/workflows/builder/table-data/all",
+    createTableRecord: (id: string) => `/workflows/builder/${id}/table-data`,
+    validateTableData: (id: string) => `/workflows/builder/${id}/table-data/validate`,
     deleteTable: (id: string) => `/workflows/builder/${id}/table`,
     validate: (id: string) => `/workflows/builder/${id}/validation`,
   },
@@ -53,5 +56,16 @@ export const API_ENDPOINTS = {
 export const getFullUrl = (endpoint: string): string => {
   // Remove leading slash if present
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint
-  return `${API_CONFIG.baseURL}/${cleanEndpoint}`
+  // If endpoint already includes /api/v1, use it as-is
+  // Otherwise, check if it's a workflow builder endpoint (starts with workflows/builder)
+  // Workflow builder endpoints don't need /api/v1 prefix
+  if (cleanEndpoint.startsWith("api/")) {
+    return `${API_CONFIG.baseURL}/${cleanEndpoint}`
+  }
+  // Workflow builder endpoints are at root level
+  if (cleanEndpoint.startsWith("workflows/builder")) {
+    return `${API_CONFIG.baseURL}/${cleanEndpoint}`
+  }
+  // Other endpoints need /api/v1 prefix
+  return `${API_CONFIG.baseURL}/api/${API_CONFIG.apiVersion}/${cleanEndpoint}`
 }

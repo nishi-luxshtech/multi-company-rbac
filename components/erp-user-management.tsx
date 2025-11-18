@@ -19,7 +19,9 @@ import {
   UserIcon,
   Building2,
 } from "lucide-react"
-import { userAPI, companyAPI, type User, type Company } from "@/lib/api-services"
+import { userAPI, type User } from "@/lib/api-services"
+import { dynamicWorkflowAPI } from "@/lib/api/services/dynamic-workflow-api.service"
+import type { AllMasterTableDataResponse } from "@/lib/api/types/dynamic-workflow.types"
 import {
   Dialog,
   DialogContent,
@@ -41,9 +43,16 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
+interface CompanyRecord {
+  id: number | string
+  company_name: string
+  company_code?: string
+  [key: string]: any
+}
+
 export function ERPUserManagement() {
   const [users, setUsers] = useState<User[]>([])
-  const [companies, setCompanies] = useState<Company[]>([])
+  const [companies, setCompanies] = useState<CompanyRecord[]>([])
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
@@ -84,10 +93,42 @@ export function ERPUserManagement() {
 
   const loadData = async () => {
     try {
-      const [usersData, companiesData] = await Promise.all([userAPI.getAll(), companyAPI.getAll()])
+      const [usersData, masterDataResponse] = await Promise.all([
+        userAPI.getAllUsers().catch(() => [] as User[]),
+        dynamicWorkflowAPI.getAllMasterTableData(
+          undefined, // company_id - get all
+          100, // limit_per_workflow
+          0, // offset_per_workflow
+          false // group_by_step
+        ).catch(() => {
+          // Return empty response structure if error
+          return {
+            total_workflows: 0,
+            workflows_with_tables: 0,
+            total_records_across_all_workflows: 0,
+            workflow_data: {}
+          } as AllMasterTableDataResponse
+        }),
+      ])
+
+      // Flatten all records from all workflows into companies list
+      const allCompanies: CompanyRecord[] = []
+      Object.values(masterDataResponse.workflow_data || {}).forEach((workflow) => {
+        if (workflow.records && workflow.records.length > 0) {
+          workflow.records.forEach((record: any) => {
+            allCompanies.push({
+              id: record.company_id || record.id || `${workflow.workflow_id}-${Math.random()}`,
+              company_name: record.company_name || "N/A",
+              company_code: record.company_code || String(record.company_id || record.id || "N/A"),
+              ...record
+            })
+          })
+        }
+      })
+
       setUsers(usersData)
       setFilteredUsers(usersData)
-      setCompanies(companiesData)
+      setCompanies(allCompanies)
     } catch (error) {
       console.error("Failed to load data:", error)
     } finally {
