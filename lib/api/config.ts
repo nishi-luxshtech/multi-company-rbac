@@ -4,7 +4,7 @@
  */
 
 export const API_CONFIG = {
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "https://erp-wwhm.onrender.com/",
+  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000/",
   apiVersion: process.env.NEXT_PUBLIC_API_VERSION || "v1",
   timeout: 30000, // 30 seconds
 } as const
@@ -37,6 +37,8 @@ export const API_ENDPOINTS = {
     migrate: (id: string) => `/workflows/builder/${id}/migrate`,
     regenerateTable: (id: string) => `/workflows/builder/${id}/regenerate-table`,
     getTableData: (id: string) => `/workflows/builder/${id}/table-data`,
+    getTableRecord: (id: string, recordId: string) => `/workflows/builder/${id}/table-data/${recordId}`,
+    updateTableRecord: (id: string, recordId: string) => `/workflows/builder/${id}/table-data/${recordId}`,
     getAllMasterTableData: () => "/workflows/builder/table-data/all",
     createTableRecord: (id: string) => `/workflows/builder/${id}/table-data`,
     validateTableData: (id: string) => `/workflows/builder/${id}/table-data/validate`,

@@ -34,7 +34,7 @@ import { ERPCompanyDetails } from "@/components/erp-company-details"
 import { WorkflowDataViewPage } from "@/components/workflow-data-view-page"
 
 interface ERPCompanyListProps {
-  onStartOnboarding: (companyId?: number) => void
+  onStartOnboarding: (companyId?: number, workflowId?: string, recordId?: string) => void
   onViewCompany?: (companyId: number) => void
 }
 
@@ -308,7 +308,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
             <p className="text-muted-foreground text-pretty">Manage and onboard companies</p>
           </div>
           {!isPermissionError && (
-            <Button onClick={() => onStartOnboarding()} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={() => onStartOnboarding(undefined, undefined)} className="bg-blue-600 hover:bg-blue-700">
               <Plus className="h-4 w-4 mr-2" />
               Add New Company
             </Button>
@@ -378,7 +378,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
           <h1 className="text-3xl font-bold text-balance">Company Management</h1>
           <p className="text-muted-foreground text-pretty">Manage and onboard companies</p>
         </div>
-        <Button onClick={() => onStartOnboarding()} className="bg-blue-600 hover:bg-blue-700">
+        <Button onClick={() => onStartOnboarding(undefined, undefined)} className="bg-blue-600 hover:bg-blue-700">
           <Plus className="h-4 w-4 mr-2" />
           Add New Company
         </Button>
@@ -489,8 +489,12 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                     size="sm"
                     className="flex-1 bg-transparent"
                     onClick={() => {
-                      const companyId = typeof record.id === "number" ? record.id : undefined
-                      onStartOnboarding(companyId)
+                      // Use company_id if available, otherwise try to parse id as number
+                      const companyId = record.company_id || (typeof record.id === "number" ? record.id : undefined)
+                      const workflowId = record.workflow_id
+                      // Use record.id as recordId (convert to string if needed)
+                      const recordId = typeof record.id === "string" ? record.id : String(record.id)
+                      onStartOnboarding(companyId, workflowId, recordId)
                     }}
                   >
                     <Edit className="h-3 w-3 mr-1" />
@@ -517,7 +521,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
           companyId={selectedCompanyId}
           open={showDetailsDialog}
           onOpenChange={setShowDetailsDialog}
-          onEdit={onStartOnboarding}
+          onEdit={(companyId) => onStartOnboarding(companyId, undefined, undefined)}
         />
       )}
 

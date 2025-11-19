@@ -138,6 +138,18 @@ export const dynamicWorkflowAPI = {
   },
 
   /**
+   * Get a specific record from the workflow's dynamic table by record ID
+   */
+  async getTableRecord(
+    workflowId: string,
+    recordId: string
+  ): Promise<Record<string, any>> {
+    return await apiClient.get<Record<string, any>>(
+      API_ENDPOINTS.dynamicWorkflows.getTableRecord(workflowId, recordId)
+    )
+  },
+
+  /**
    * Get all master table records from ALL workflows
    */
   async getAllMasterTableData(
@@ -206,6 +218,20 @@ export const dynamicWorkflowAPI = {
   ): Promise<Record<string, any>> {
     return await apiClient.post<Record<string, any>>(
       API_ENDPOINTS.dynamicWorkflows.createTableRecord(id),
+      data
+    )
+  },
+
+  /**
+   * Update an existing record in the workflow's master table
+   */
+  async updateTableRecord(
+    workflowId: string,
+    recordId: string,
+    data: Record<string, any>
+  ): Promise<Record<string, any>> {
+    return await apiClient.put<Record<string, any>>(
+      API_ENDPOINTS.dynamicWorkflows.updateTableRecord(workflowId, recordId),
       data
     )
   },

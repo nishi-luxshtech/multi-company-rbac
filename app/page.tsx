@@ -17,6 +17,7 @@ import type { Workflow } from "@/lib/workflow-storage"
 function ERPApp() {
   const [activeTab, setActiveTab] = useState("dashboard")
   const [onboardingCompanyId, setOnboardingCompanyId] = useState<number | undefined>()
+  const [onboardingRecordId, setOnboardingRecordId] = useState<string | undefined>()
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | undefined>()
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null)
   const [showWorkflowBuilder, setShowWorkflowBuilder] = useState(false)
@@ -25,9 +26,21 @@ function ERPApp() {
   const [workflowChain, setWorkflowChain] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<"wizard" | "tabs">("wizard")
 
-  const handleStartOnboarding = (companyId?: number) => {
+  const handleStartOnboarding = (companyId?: number, workflowId?: string, recordId?: string) => {
     setOnboardingCompanyId(companyId)
-    setShowWorkflowSelector(true)
+    setOnboardingRecordId(recordId)
+    
+    // If both companyId and workflowId are provided, skip workflow selector and go directly to wizard
+    if (companyId && workflowId) {
+      setSelectedWorkflowId(workflowId)
+      setWorkflowChain([])
+      setViewMode("tabs") // Default to tabs view for editing
+      setShowWorkflowSelector(false)
+      setActiveTab("onboarding")
+    } else {
+      // Show workflow selector for new company creation
+      setShowWorkflowSelector(true)
+    }
   }
 
   const handleWorkflowSelected = (workflowId: string, selectedViewMode: "wizard" | "tabs") => {
@@ -58,6 +71,7 @@ function ERPApp() {
     } else {
       console.log("All workflows in chain completed")
       setOnboardingCompanyId(undefined)
+      setOnboardingRecordId(undefined)
       setSelectedWorkflowId(null)
       setWorkflowChain([])
       setShowWorkflowSelector(false)
@@ -67,6 +81,7 @@ function ERPApp() {
 
   const handleOnboardingCancel = () => {
     setOnboardingCompanyId(undefined)
+    setOnboardingRecordId(undefined)
     setSelectedWorkflowId(null)
     setWorkflowChain([])
     setShowWorkflowSelector(false)
@@ -133,6 +148,7 @@ function ERPApp() {
           <DynamicCompanyWizard
             workflowId={selectedWorkflowId}
             companyId={onboardingCompanyId}
+            recordId={onboardingRecordId}
             viewMode={viewMode}
             onComplete={handleOnboardingComplete}
             onCancel={handleOnboardingCancel}
