@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { ERPCompanyDetails } from "@/components/erp-company-details"
 import { WorkflowDataViewPage } from "@/components/workflow-data-view-page"
+import { useToast } from "@/hooks/use-toast"
 
 interface ERPCompanyListProps {
   onStartOnboarding: (companyId?: number, workflowId?: string, recordId?: string) => void
@@ -54,6 +55,7 @@ interface MasterRecord {
 }
 
 export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyListProps) {
+  const { toast } = useToast()
   const [masterRecords, setMasterRecords] = useState<MasterRecord[]>([])
   const [filteredMasterRecords, setFilteredMasterRecords] = useState<MasterRecord[]>([])
   const [loading, setLoading] = useState(true)
@@ -61,6 +63,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
   const [showDetailsDialog, setShowDetailsDialog] = useState(false)
   const [deleteCompanyId, setDeleteCompanyId] = useState<number | string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [error, setError] = useState<string>("")
   const [isPermissionError, setIsPermissionError] = useState(false)
   const [viewWorkflowData, setViewWorkflowData] = useState<{
@@ -264,30 +267,56 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
     if (!deleteCompanyId) return
 
     try {
+      setIsDeleting(true)
       console.log("Deleting master record", deleteCompanyId)
       
-      // Find the record to get workflow_id
+      // Find the record to get workflow_id and record_id
       const record = masterRecords.find(r => r.id === deleteCompanyId || r.company_id === deleteCompanyId)
       
       if (!record || !record.workflow_id) {
         console.error("Cannot delete: record or workflow_id not found")
-        setError("Cannot delete: record not found")
+        toast({
+          title: "Error",
+          description: "Cannot delete: record not found",
+          variant: "destructive",
+        })
         setDeleteCompanyId(null)
+        setIsDeleting(false)
         return
       }
 
+      // Get the record_id (convert to string if needed)
+      const recordId = typeof record.id === "string" ? record.id : String(record.id)
+      const workflowId = record.workflow_id
+      const companyName = record.company_name || "Company"
+
       // Delete via workflow builder API
-      // Note: The backend should have a DELETE endpoint for table-data records
-      // For now, we'll reload the data after attempting deletion
-      // TODO: Implement DELETE /workflows/builder/{workflow_id}/table-data/{record_id} endpoint call
-      console.log(`Would delete record ${deleteCompanyId} from workflow ${record.workflow_id}`)
+      // DELETE /workflows/builder/{workflow_id}/table-data/{record_id}
+      await dynamicWorkflowAPI.deleteTableRecord(workflowId, recordId)
       
-      // Reload master records from server
+      console.log(`Successfully deleted record ${recordId} from workflow ${workflowId}`)
+      
+      // Show success message
+      toast({
+        title: "Company Deleted",
+        description: `${companyName} has been permanently deleted.`,
+      })
+      
+      // Reload master records from server to reflect the deletion
       await loadMasterRecords()
+      
+      // Close the dialog
       setDeleteCompanyId(null)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to delete record:", error)
-      setError("Failed to delete record. Please try again.")
+      const errorMessage = error?.response?.data?.detail || error?.message || "Failed to delete record. Please try again."
+      toast({
+        title: "Delete Failed",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -526,7 +555,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
       )}
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteCompanyId !== null} onOpenChange={() => setDeleteCompanyId(null)}>
+      <AlertDialog open={deleteCompanyId !== null} onOpenChange={(open) => !open && !isDeleting && setDeleteCompanyId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
@@ -535,9 +564,20 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90">
-              Delete
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete} 
+              disabled={isDeleting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

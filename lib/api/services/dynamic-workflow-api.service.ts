@@ -235,4 +235,17 @@ export const dynamicWorkflowAPI = {
       data
     )
   },
+
+  /**
+   * Delete a record from the workflow's master table
+   * Warning: This action is irreversible
+   */
+  async deleteTableRecord(
+    workflowId: string,
+    recordId: string
+  ): Promise<void> {
+    return await apiClient.delete<void>(
+      API_ENDPOINTS.dynamicWorkflows.deleteTableRecord(workflowId, recordId)
+    )
+  },
 }

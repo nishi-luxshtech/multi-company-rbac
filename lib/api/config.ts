@@ -39,6 +39,7 @@ export const API_ENDPOINTS = {
     getTableData: (id: string) => `/workflows/builder/${id}/table-data`,
     getTableRecord: (id: string, recordId: string) => `/workflows/builder/${id}/table-data/${recordId}`,
     updateTableRecord: (id: string, recordId: string) => `/workflows/builder/${id}/table-data/${recordId}`,
+    deleteTableRecord: (id: string, recordId: string) => `/workflows/builder/${id}/table-data/${recordId}`,
     getAllMasterTableData: () => "/workflows/builder/table-data/all",
     createTableRecord: (id: string) => `/workflows/builder/${id}/table-data`,
     validateTableData: (id: string) => `/workflows/builder/${id}/table-data/validate`,
