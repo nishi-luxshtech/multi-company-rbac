@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -52,7 +52,19 @@ export function DynamicCompanyWizard({
   const [apiValidationErrorFields, setApiValidationErrorFields] = useState<Set<string>>(new Set())
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isValidating, setIsValidating] = useState(false)
+  const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(true)
+  const [isLoadingData, setIsLoadingData] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [dataLoaded, setDataLoaded] = useState(false)
   const { toast } = useToast()
+  
+  // Refs to track loading state and prevent duplicate API calls
+  const isLoadingWorkflowRef = useRef(false)
+  const isLoadingDataRef = useRef(false)
+  const dataLoadedRef = useRef(false)
+  const countryFieldCheckRef = useRef(false)
+  const workflowEffectTriggeredRef = useRef<Set<string>>(new Set())
+  const recordEffectTriggeredRef = useRef<Set<string>>(new Set())
   
   // Safely get currentCompany from auth context if available
   // Use useContext directly to avoid throwing error if not in provider
@@ -60,6 +72,16 @@ export function DynamicCompanyWizard({
   const currentCompany: Company | null = authContext?.currentCompany || null
 
   useEffect(() => {
+    const workflowKey = workflowId || "default-workflow"
+    
+    if (workflowEffectTriggeredRef.current.has(workflowKey)) {
+      // Skip duplicate load triggered by React StrictMode
+      return
+    }
+    
+    workflowEffectTriggeredRef.current.add(workflowKey)
+    
+    // Reset state for new workflow load
     setCurrentStep(0)
     setErrors({})
     setCompletedSteps(new Set())
@@ -67,15 +89,38 @@ export function DynamicCompanyWizard({
     setStepValidationErrors({})
     setApiValidationErrors({})
     setApiValidationErrorFields(new Set())
+    setLoadError(null)
+    setDataLoaded(false)
+    setIsLoadingWorkflow(true)
+    setIsLoadingData(false)
+    
+    // Reset refs
+    isLoadingDataRef.current = false
+    dataLoadedRef.current = false
+    countryFieldCheckRef.current = false
+    
     loadWorkflow()
   }, [workflowId])
 
   // Load existing company data when editing (recordId is provided)
   useEffect(() => {
-    if (workflow && recordId) {
+    if (!workflow) return
+    
+    if (recordId) {
+      const recordKey = `${workflowId || "default-workflow"}-${recordId}`
+      if (recordEffectTriggeredRef.current.has(recordKey)) {
+        // Skip duplicate load triggered by React StrictMode
+        return
+      }
+      recordEffectTriggeredRef.current.add(recordKey)
       loadExistingCompanyData()
+    } else {
+      // If no recordId, we're creating new - data is ready
+      setDataLoaded(true)
+      dataLoadedRef.current = true
+      setIsLoadingData(false)
     }
-  }, [workflow, recordId])
+  }, [workflow, recordId, workflowId])
   
   /**
    * ====================================================================
@@ -94,7 +139,13 @@ export function DynamicCompanyWizard({
    * ====================================================================
    */
   useEffect(() => {
-    if (!workflow || !recordId) return
+    // Skip if data is still loading, not loaded yet, or already checked
+    if (!workflow || !recordId || isLoadingDataRef.current || !dataLoadedRef.current || countryFieldCheckRef.current) {
+      return
+    }
+    
+    // Mark as checked to prevent duplicate calls
+    countryFieldCheckRef.current = true
     
     // Find ALL Country fields (Step 1 AND Step 2)
     const allCountryFields = workflow.steps
@@ -117,7 +168,8 @@ export function DynamicCompanyWizard({
     })
     
     // If any Country field is empty, try to fix it
-    if (emptyCountryFields.length > 0) {
+    // BUT only if data has finished loading (not during initial load)
+    if (emptyCountryFields.length > 0 && dataLoadedRef.current) {
       console.warn(`⚠️ ${emptyCountryFields.length} Country field(s) are EMPTY in formData!`)
       emptyCountryFields.forEach(({ field, step, stepIndex }) => {
         console.warn(`   - Step ${stepIndex + 1} (${step.name}): Field ID ${field.id}`)
@@ -127,7 +179,13 @@ export function DynamicCompanyWizard({
       
       // Try to fetch and set the value one more time as a last resort
       // This will only run if the value is still empty after all other attempts
+      // Only run once - prevent duplicate API calls
       const fetchAndSetCountry = async () => {
+        // Double check - skip if data is loading
+        if (isLoadingDataRef.current) {
+          return
+        }
+        
         try {
           const record = await dynamicWorkflowAPI.getTableRecord(workflowId, recordId)
           
@@ -175,7 +233,17 @@ export function DynamicCompanyWizard({
   }, [formData, workflow, recordId, workflowId])
 
   const loadWorkflow = async () => {
+    // Prevent duplicate calls
+    if (isLoadingWorkflowRef.current) {
+      console.log("Workflow already loading, skipping duplicate call")
+      return
+    }
+    
     try {
+      isLoadingWorkflowRef.current = true
+      setIsLoadingWorkflow(true)
+      setLoadError(null)
+      
       // Try to load from dynamic workflow API first
       const dynamicWorkflow = await WorkflowBridgeService.getWorkflowById(workflowId)
       
@@ -237,16 +305,21 @@ export function DynamicCompanyWizard({
           setFormData(initialData)
         } else {
           console.error("DynamicCompanyWizard: Workflow not found:", workflowId)
+          const errorMsg = "Workflow not found"
           setWorkflow(null)
+          setLoadError(errorMsg)
           toast({
             title: "Error",
-            description: "Workflow not found",
+            description: errorMsg,
             variant: "destructive",
           })
         }
       }
-    } catch (error) {
-      console.error("DynamicCompanyWizard: Failed to load workflow from API, using localStorage:", error)
+    } catch (error: any) {
+      console.error("DynamicCompanyWizard: Failed to load workflow:", error)
+      const errorMsg = error?.response?.data?.detail || error?.message || "Failed to load workflow"
+      setLoadError(errorMsg)
+      
       // Fallback to localStorage
       const wf = workflowStorage.getById(workflowId)
       if (wf) {
@@ -258,25 +331,47 @@ export function DynamicCompanyWizard({
           })
         })
         setFormData(initialData)
+        // Still show warning but continue
+        toast({
+          title: "Warning",
+          description: "Loaded workflow from cache. Some features may not be available.",
+          variant: "default",
+        })
       } else {
         toast({
           title: "Error",
-          description: "Workflow not found",
+          description: errorMsg,
           variant: "destructive",
         })
       }
+    } finally {
+      isLoadingWorkflowRef.current = false
+      setIsLoadingWorkflow(false)
     }
   }
   
   const loadExistingCompanyData = async () => {
-    if (!workflow || !recordId) return
+    // Prevent duplicate calls
+    if (isLoadingDataRef.current || dataLoadedRef.current || !workflow || !recordId) {
+      console.log("Data already loading or loaded, skipping duplicate call", {
+        isLoading: isLoadingDataRef.current,
+        isLoaded: dataLoadedRef.current,
+        hasWorkflow: !!workflow,
+        hasRecordId: !!recordId
+      })
+      return
+    }
 
     try {
+      isLoadingDataRef.current = true
+      setIsLoadingData(true)
+      setLoadError(null)
       console.log("Loading existing company data for editing:", { workflowId, recordId })
       
       // Fetch existing data using the get-by-id endpoint
       // EXPECTED RESPONSE: Should contain address_country field
       const existingRecord = await dynamicWorkflowAPI.getTableRecord(workflowId, recordId)
+      
       console.log("=== LOADING EXISTING DATA ===")
       console.log("Full API Response:", JSON.stringify(existingRecord, null, 2))
       console.log("Workflow steps:", workflow.steps.map(s => ({ 
@@ -936,28 +1031,131 @@ export function DynamicCompanyWizard({
       })
       setCompletedSteps(completedStepsSet)
 
+      // Mark as loaded using both state and ref
+      dataLoadedRef.current = true
+      setDataLoaded(true)
       toast({
         title: "Data Loaded",
         description: "Existing company data has been loaded for editing.",
       })
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to load existing company data:", error)
+      const errorMsg = error?.response?.data?.detail || error?.response?.data?.message || error?.message || "Failed to load existing company data"
+      setLoadError(errorMsg)
       toast({
-        title: "Warning",
-        description: "Could not load existing data. Starting with empty form.",
+        title: "Error",
+        description: errorMsg,
         variant: "destructive",
       })
+      // Don't set dataLoaded to true if there was an error
+      // This allows the user to retry or cancel
+      dataLoadedRef.current = false
+    } finally {
+      isLoadingDataRef.current = false
+      setIsLoadingData(false)
     }
+  }
+
+  // Show loading state while workflow or data is loading
+  const isLoading = isLoadingWorkflow || isLoadingData
+  const isReady = workflow && (!recordId || (recordId && dataLoaded))
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto" />
+          <div className="space-y-2">
+            <p className="text-lg font-medium">Loading company data...</p>
+            <p className="text-sm text-muted-foreground">
+              {isLoadingWorkflow && "Loading workflow configuration"}
+              {isLoadingWorkflow && isLoadingData && " and "}
+              {isLoadingData && "Loading existing company data"}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state if there was a load error
+  if (loadError && !workflow) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center space-y-4 max-w-md">
+          <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
+          <div className="space-y-2">
+            <p className="text-lg font-medium text-destructive">Failed to Load Data</p>
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+          </div>
+          <Button onClick={onCancel} variant="outline">
+            Go Back
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   if (!workflow) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <p className="text-muted-foreground">Loading workflow...</p>
+          <p className="text-muted-foreground">Workflow not found</p>
+          <Button onClick={onCancel} variant="outline" className="mt-4">
+            Go Back
+          </Button>
         </div>
       </div>
     )
+  }
+
+  // If we're in edit mode but data failed to load and we're not loading anymore
+  // Show error and don't show form - user requirement: only show fully loaded pre-filled data
+  if (recordId && !dataLoaded && loadError && !isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center space-y-4 max-w-md">
+          <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
+          <div className="space-y-2">
+            <p className="text-lg font-medium text-destructive">Failed to Load Company Data</p>
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Please check your connection and try again, or contact support if the issue persists.
+            </p>
+          </div>
+          <div className="flex gap-2 justify-center">
+            <Button onClick={onCancel} variant="outline">
+              Go Back
+            </Button>
+            <Button
+              onClick={() => {
+                setLoadError(null)
+                setDataLoaded(false)
+                dataLoadedRef.current = false
+                setIsLoadingData(false)
+                isLoadingDataRef.current = false
+                countryFieldCheckRef.current = false
+                if (workflow && recordId) {
+                  loadExistingCompanyData()
+                }
+              }}
+              variant="default"
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // If we're in edit mode but data hasn't loaded yet (edge case - shouldn't happen due to loading check above)
+  // This is a safety check to prevent showing empty form in edit mode
+  if (recordId && !dataLoaded && !isLoading && !loadError) {
+    // This shouldn't happen, but if it does, wait a bit more or show loading
+    // Actually, this case shouldn't occur - if recordId exists and we're not loading,
+    // either dataLoaded should be true or loadError should be set
+    // So we can safely show the form here as a fallback
   }
 
   if (!workflow.steps || workflow.steps.length === 0) {
