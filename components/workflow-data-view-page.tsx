@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -28,8 +28,36 @@ export function WorkflowDataViewPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Ref to track if the effect has already been triggered (prevents duplicate API calls in React StrictMode)
+  const loadEffectTriggeredRef = useRef<string | null>(null)
+  const isLoadingRef = useRef(false)
+
   useEffect(() => {
-    loadWorkflowData()
+    const effectKey = `${workflowId}-${companyId || 'none'}`
+    
+    // Skip duplicate load triggered by React StrictMode for the same workflowId and companyId
+    if (loadEffectTriggeredRef.current === effectKey || isLoadingRef.current) {
+      return
+    }
+    
+    // Mark as triggered and loading immediately (before async call)
+    loadEffectTriggeredRef.current = effectKey
+    isLoadingRef.current = true
+
+    loadWorkflowData().finally(() => {
+      // Only reset loading flag if we're still on the same workflowId and companyId
+      if (loadEffectTriggeredRef.current === effectKey) {
+        isLoadingRef.current = false
+      }
+    })
+
+    // Cleanup function to reset when workflowId or companyId changes
+    return () => {
+      if (loadEffectTriggeredRef.current !== effectKey) {
+        loadEffectTriggeredRef.current = null
+        isLoadingRef.current = false
+      }
+    }
   }, [workflowId, companyId])
 
   const loadWorkflowData = async () => {
@@ -176,14 +204,14 @@ export function WorkflowDataViewPage({
             <div className="mb-8">
               <div className="border-b border-border">
                 <TabsList className="h-auto w-full justify-start bg-transparent p-0 gap-0">
-                  <div className="flex gap-0 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                  <div className="flex gap-0 overflow-x-auto scrollbar-thin">
                     {recordToDisplay.steps!.map((step, stepIndex) => (
                       <TabsTrigger
                         key={step.step_id || stepIndex}
                         value={`step-${stepIndex}`}
-                        className="px-6 py-3 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none font-medium transition-all hover:text-primary/80"
+                        className="px-6 py-3 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none font-medium transition-all hover:text-primary/80 whitespace-nowrap"
                       >
-                        <span className="whitespace-nowrap text-sm">{step.step_name}</span>
+                        <span className="text-sm">{step.step_name}</span>
                       </TabsTrigger>
                     ))}
                   </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -58,19 +58,34 @@ export function ERPUserManagement() {
   const [searchQuery, setSearchQuery] = useState("")
   const [showUserDialog, setShowUserDialog] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
-  const [deleteUserId, setDeleteUserId] = useState<number | null>(null)
+  const [deleteUserId, setDeleteUserId] = useState<number | string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    username: string
+    email: string
+    password: string
+    role: "user" | "admin"
+    company_id: number | null
+  }>({
     username: "",
     email: "",
     password: "",
-    role: "user" as "user" | "admin",
+    role: "user",
     company_id: null,
   })
 
+  // Ref to track if the effect has already been triggered (prevents duplicate API calls in React StrictMode)
+  const loadEffectTriggeredRef = useRef(false)
+
   useEffect(() => {
+    // Skip duplicate load triggered by React StrictMode
+    if (loadEffectTriggeredRef.current) {
+      return
+    }
+    loadEffectTriggeredRef.current = true
+
     loadData()
   }, [])
 
@@ -156,7 +171,7 @@ export function ERPUserManagement() {
       email: user.email || "",
       password: "", // Don't populate password for editing
       role: user.role as "user" | "admin",
-      company_id: user.company_id || null,
+      company_id: user.company_id ?? null,
     })
     setError("")
     setShowUserDialog(true)
@@ -214,9 +229,9 @@ export function ERPUserManagement() {
       console.log("Saving user with payload:", payload)
 
       if (editingUser) {
-        await userAPI.update(editingUser.id, payload)
+        await userAPI.updateUser(editingUser.id, payload)
       } else {
-        await userAPI.create(payload)
+        await userAPI.createUser(payload)
       }
 
       await loadData()
@@ -241,7 +256,7 @@ export function ERPUserManagement() {
     if (!deleteUserId) return
 
     try {
-      await userAPI.delete(deleteUserId)
+      await userAPI.deleteUser(deleteUserId)
       await loadData()
       setDeleteUserId(null)
     } catch (error) {
@@ -529,10 +544,11 @@ export function ERPUserManagement() {
                 </p>
               )}
               <Select
-                value={formData.company_id?.toString() || "none"}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, company_id: value === "none" ? null : Number.parseInt(value) })
-                }
+                value={formData.company_id !== null && formData.company_id !== undefined ? String(formData.company_id) : "none"}
+                onValueChange={(value) => {
+                  const newCompanyId: number | null = value === "none" ? null : Number.parseInt(value)
+                  setFormData({ ...formData, company_id: newCompanyId })
+                }}
                 disabled={saving}
               >
                 <SelectTrigger className="h-12 text-base bg-white dark:bg-gray-900 border-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200">

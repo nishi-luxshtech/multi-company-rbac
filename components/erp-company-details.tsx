@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,9 +32,22 @@ export function ERPCompanyDetails({ companyId, open, onOpenChange, onEdit }: Com
   const [loading, setLoading] = useState(true)
   const [companyData, setCompanyData] = useState<any>(null)
 
+  // Ref to track if the effect has already been triggered for a specific companyId (prevents duplicate API calls in React StrictMode)
+  const loadEffectTriggeredRef = useRef<{ companyId: number; open: boolean } | null>(null)
+
   useEffect(() => {
     if (open && companyId) {
+      const key = { companyId, open }
+      // Skip duplicate load triggered by React StrictMode for the same companyId and open state
+      if (loadEffectTriggeredRef.current?.companyId === companyId && loadEffectTriggeredRef.current?.open === open) {
+        return
+      }
+      loadEffectTriggeredRef.current = key
+
       loadCompanyDetails()
+    } else {
+      // Reset when dialog closes
+      loadEffectTriggeredRef.current = null
     }
   }, [open, companyId])
 
@@ -42,7 +55,7 @@ export function ERPCompanyDetails({ companyId, open, onOpenChange, onEdit }: Com
     try {
       setLoading(true)
       console.log("Loading company details for ID:", companyId)
-      const data = await companyAPI.getById(companyId)
+      const data = await companyAPI.getCompanyById(companyId)
       console.log("Company details loaded:", data)
       setCompanyData(data)
     } catch (error) {
@@ -83,17 +96,19 @@ export function ERPCompanyDetails({ companyId, open, onOpenChange, onEdit }: Com
           </div>
         ) : companyData ? (
           <Tabs defaultValue="general" className="flex-1 overflow-hidden flex flex-col">
-            <TabsList className="grid w-full grid-cols-5 lg:grid-cols-9">
-              <TabsTrigger value="general">General</TabsTrigger>
-              <TabsTrigger value="addresses">Addresses</TabsTrigger>
-              <TabsTrigger value="communication">Communication</TabsTrigger>
-              <TabsTrigger value="messages">Messages</TabsTrigger>
-              <TabsTrigger value="employees">Employees</TabsTrigger>
-              <TabsTrigger value="accounting">Accounting</TabsTrigger>
-              <TabsTrigger value="invoice">Invoice</TabsTrigger>
-              <TabsTrigger value="payment">Payment</TabsTrigger>
-              <TabsTrigger value="distribution">Distribution</TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto scrollbar-thin">
+              <TabsList className="grid w-full grid-cols-5 lg:grid-cols-9 min-w-max">
+                <TabsTrigger value="general">General</TabsTrigger>
+                <TabsTrigger value="addresses">Addresses</TabsTrigger>
+                <TabsTrigger value="communication">Communication</TabsTrigger>
+                <TabsTrigger value="messages">Messages</TabsTrigger>
+                <TabsTrigger value="employees">Employees</TabsTrigger>
+                <TabsTrigger value="accounting">Accounting</TabsTrigger>
+                <TabsTrigger value="invoice">Invoice</TabsTrigger>
+                <TabsTrigger value="payment">Payment</TabsTrigger>
+                <TabsTrigger value="distribution">Distribution</TabsTrigger>
+              </TabsList>
+            </div>
 
             <div className="flex-1 overflow-y-auto mt-4">
               {/* General Information Tab */}

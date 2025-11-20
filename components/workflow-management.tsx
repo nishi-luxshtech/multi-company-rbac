@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -34,7 +34,16 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Ref to track if the effect has already been triggered (prevents duplicate API calls in React StrictMode)
+  const loadEffectTriggeredRef = useRef(false)
+
   useEffect(() => {
+    // Skip duplicate load triggered by React StrictMode
+    if (loadEffectTriggeredRef.current) {
+      return
+    }
+    loadEffectTriggeredRef.current = true
+
     initializeDefaultWorkflow()
     loadWorkflows()
   }, [])

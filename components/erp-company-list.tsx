@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -80,7 +80,16 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
     companyName: null,
   })
 
+  // Ref to track if the effect has already been triggered (prevents duplicate API calls in React StrictMode)
+  const loadEffectTriggeredRef = useRef(false)
+
   useEffect(() => {
+    // Skip duplicate load triggered by React StrictMode
+    if (loadEffectTriggeredRef.current) {
+      return
+    }
+    loadEffectTriggeredRef.current = true
+
     // Check if user is authenticated before loading data
     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null
     if (!token) {

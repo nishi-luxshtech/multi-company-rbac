@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -35,8 +35,36 @@ export function ERPCompanyDetailsPage({ companyId, onBack }: ERPCompanyDetailsPa
   const [isWorkflowCompany, setIsWorkflowCompany] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Ref to track if the effect has already been triggered (prevents duplicate API calls in React StrictMode)
+  const loadEffectTriggeredRef = useRef<string | null>(null)
+  const isLoadingRef = useRef(false)
+
   useEffect(() => {
-    loadCompanyDetails()
+    const companyIdStr = companyId.toString()
+    
+    // Skip duplicate load triggered by React StrictMode for the same companyId
+    if (loadEffectTriggeredRef.current === companyIdStr || isLoadingRef.current) {
+      return
+    }
+    
+    // Mark as triggered and loading immediately (before async call)
+    loadEffectTriggeredRef.current = companyIdStr
+    isLoadingRef.current = true
+
+    loadCompanyDetails().finally(() => {
+      // Only reset loading flag if we're still on the same companyId
+      if (loadEffectTriggeredRef.current === companyIdStr) {
+        isLoadingRef.current = false
+      }
+    })
+
+    // Cleanup function to reset when companyId changes
+    return () => {
+      if (loadEffectTriggeredRef.current !== companyIdStr) {
+        loadEffectTriggeredRef.current = null
+        isLoadingRef.current = false
+      }
+    }
   }, [companyId])
 
   const loadCompanyDetails = async () => {
@@ -153,7 +181,7 @@ export function ERPCompanyDetailsPage({ companyId, onBack }: ERPCompanyDetailsPa
         </div>
 
         <Tabs defaultValue="step-0" className="w-full">
-          <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 scrollbar-thin">
             <TabsList
               className="inline-flex w-auto min-w-full md:grid h-auto flex-nowrap md:flex-wrap"
               style={{ gridTemplateColumns: `repeat(${workflow.steps.length}, minmax(0, 1fr))` }}
@@ -275,7 +303,7 @@ export function ERPCompanyDetailsPage({ companyId, onBack }: ERPCompanyDetailsPa
       </div>
 
       <Tabs defaultValue="general" className="w-full">
-        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 scrollbar-thin">
           <TabsList className="inline-flex w-auto min-w-full md:grid md:grid-cols-9 h-auto flex-nowrap md:flex-wrap">
             <TabsTrigger value="general" className="flex items-center gap-2 whitespace-nowrap">
               <Building2 className="h-4 w-4" />

@@ -16,6 +16,7 @@ export interface User {
   role: "user" | "admin" | "super_admin"
   permissions?: string[]
   is_active?: boolean
+  company_id?: number | null
 }
 
 export interface Company {
@@ -193,6 +194,8 @@ export const userAPI = {
     password: string
     role: "user" | "admin"
     permissions?: string[]
+    company_id?: number | null
+    email?: string
   }): Promise<User> {
     return await apiClient.post<User>("/api/users", userData)
   },
@@ -201,12 +204,14 @@ export const userAPI = {
    * Update a user
    */
   async updateUser(
-    userId: number,
+    userId: number | string,
     userData: {
       username?: string
       password?: string
       role?: "user" | "admin"
       permissions?: string[]
+      company_id?: number | null
+      email?: string
     }
   ): Promise<User> {
     return await apiClient.put<User>(`/api/users/${userId}`, userData)
@@ -215,7 +220,7 @@ export const userAPI = {
   /**
    * Delete a user
    */
-  async deleteUser(userId: number): Promise<void> {
+  async deleteUser(userId: number | string): Promise<void> {
     return await apiClient.delete<void>(`/api/users/${userId}`)
   },
 }

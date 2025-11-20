@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Building2, Users, CheckCircle2, Clock, TrendingUp, AlertCircle, ShieldAlert } from "lucide-react"
@@ -35,7 +35,16 @@ export function ERPDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Ref to track if the effect has already been triggered (prevents duplicate API calls in React StrictMode)
+  const loadEffectTriggeredRef = useRef(false)
+
   useEffect(() => {
+    // Skip duplicate load triggered by React StrictMode
+    if (loadEffectTriggeredRef.current) {
+      return
+    }
+    loadEffectTriggeredRef.current = true
+
     loadDashboardData()
   }, [])
 
