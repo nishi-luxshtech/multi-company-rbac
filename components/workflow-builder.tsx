@@ -2,15 +2,15 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Plus, Trash2, GripVertical, Save, ChevronDown, ChevronUp } from "lucide-react"
-import { workflowStorage, type WorkflowStep } from "@/lib/workflow-storage"
+import { ArrowLeft, Plus, Trash2, GripVertical, Save, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
+import type { WorkflowStep } from "@/lib/workflow-storage"
 import { WorkflowBridgeService } from "@/lib/api/services/workflow-bridge.service"
 import { FrontendWorkflow, FieldType } from "@/lib/api/types/dynamic-workflow.types"
 import { Switch } from "@/components/ui/switch"
@@ -32,60 +32,91 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
   const [draggedStepId, setDraggedStepId] = useState<string | null>(null)
   const [dragOverStepId, setDragOverStepId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Track if data has been loaded (for edit mode) or if it's a new workflow
+  const [isDataLoaded, setIsDataLoaded] = useState<boolean>(!workflowId) // true for new workflow, false for edit mode
+  
+  // Ref to track the last loaded workflowId and prevent duplicate API calls
+  const lastLoadedWorkflowIdRef = useRef<string | null>(null)
+  const isLoadingRef = useRef<boolean>(false)
 
   useEffect(() => {
     const loadWorkflow = async () => {
-      if (workflowId) {
-        try {
-          // Try to load from API first
-          const apiWorkflow = await WorkflowBridgeService.getWorkflowById(workflowId)
-          if (apiWorkflow) {
-            setName(apiWorkflow.name)
-            setDescription(apiWorkflow.description)
-            setIsActive(apiWorkflow.isActive)
-            // Normalize step orders to start from 1 (fix for steps with order 0)
-            const stepsWithFields = apiWorkflow.steps.map((step, index) => ({
-              ...step,
-              order: step.order && step.order > 0 ? step.order : index + 1,
-              fields: (step.fields || []).map((field) => ({
-                id: field.id,
-                label: field.label,
-                type: field.type as any,
-                required: field.required,
-                placeholder: field.placeholder,
-                validation: field.validation,
-                options: (field as any).options,
-              })),
-            }))
-            setSteps(stepsWithFields)
-            // Expand first step by default
-            if (apiWorkflow.steps.length > 0) {
-              setExpandedSteps(new Set([apiWorkflow.steps[0].id]))
-            }
-            return
-          }
-        } catch (apiError) {
-          console.error("Failed to load workflow from API, trying localStorage:", apiError)
-        }
+      if (!workflowId) {
+        // No workflowId means creating new workflow - data is ready (empty form)
+        setIsDataLoaded(true)
+        return
+      }
 
-        // Fallback to localStorage
-        const workflow = workflowStorage.getById(workflowId)
-        if (workflow) {
-          setName(workflow.name)
-          setDescription(workflow.description)
-          setIsActive(workflow.isActive)
-          // Normalize step orders to start from 1
-          const stepsWithFields = workflow.steps.map((step, index) => ({
+      // Reset data loaded state when workflowId exists (for edit mode)
+      // This ensures loader shows immediately when clicking Edit
+      setIsDataLoaded(false)
+
+      // Check if workflowId changed - if so, reset loading state for fresh load
+      const previousWorkflowId = lastLoadedWorkflowIdRef.current
+      if (previousWorkflowId !== workflowId) {
+        // WorkflowId changed - reset to allow fresh load
+        isLoadingRef.current = false
+      }
+
+      // Prevent duplicate concurrent API calls ONLY if we're currently loading the same workflowId
+      // This prevents race conditions but still shows the loader
+      if (isLoadingRef.current && previousWorkflowId === workflowId) {
+        // Already loading this exact workflow, wait for it to complete
+        // Loader is already showing (isDataLoaded = false), so just return
+        return
+      }
+
+      // Mark as loading and track this workflowId
+      isLoadingRef.current = true
+      lastLoadedWorkflowIdRef.current = workflowId
+
+      try {
+        // Load workflow from API
+        const apiWorkflow = await WorkflowBridgeService.getWorkflowById(workflowId)
+        if (apiWorkflow) {
+          // Update all state first, then mark as loaded
+          // This ensures all data is populated before showing the form
+          setName(apiWorkflow.name)
+          setDescription(apiWorkflow.description)
+          setIsActive(apiWorkflow.isActive)
+          
+          // Normalize step orders to start from 1 (fix for steps with order 0)
+          const stepsWithFields = apiWorkflow.steps.map((step, index) => ({
             ...step,
             order: step.order && step.order > 0 ? step.order : index + 1,
-            fields: step.fields || [],
+            fields: (step.fields || []).map((field) => ({
+              id: field.id,
+              label: field.label,
+              type: field.type as any,
+              required: field.required,
+              placeholder: field.placeholder,
+              validation: field.validation,
+              options: (field as any).options,
+            })),
           }))
           setSteps(stepsWithFields)
+          
           // Expand first step by default
-          if (workflow.steps.length > 0) {
-            setExpandedSteps(new Set([workflow.steps[0].id]))
+          if (apiWorkflow.steps.length > 0) {
+            setExpandedSteps(new Set([apiWorkflow.steps[0].id]))
           }
+          
+          // Mark data as loaded after all state updates
+          // React will batch all state updates, so this will run after they're applied
+          setIsDataLoaded(true)
+        } else {
+          // Workflow not found - show form with error
+          setError("Workflow not found")
+          setIsDataLoaded(true)
         }
+      } catch (apiError: any) {
+        console.error("Failed to load workflow from API:", apiError)
+        // Show error but still allow user to see the form
+        setError(apiError?.message || "Failed to load workflow. Please try again.")
+        // Mark as loaded so user can see the error message
+        setIsDataLoaded(true)
+      } finally {
+        isLoadingRef.current = false
       }
     }
 
@@ -162,71 +193,61 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
 
       if (workflowId) {
         // Update existing workflow
-        try {
-          // Update full workflow including steps and fields via bridge
-          await WorkflowBridgeService.updateWorkflow(workflowId, {
-            name: workflowData.name,
-            description: workflowData.description,
-            isActive: workflowData.isActive,
-            steps: workflowData.steps.map(step => ({
-              id: step.id,
-              name: step.name,
-              description: step.description,
-              order: step.order,
-              fields: step.fields.map(field => ({
-                id: field.id,
-                label: field.label,
-                type: (field.type === "multiselect" ? "multi_select" : field.type) as any,
-                required: field.required,
-                placeholder: field.placeholder,
-                validation: field.validation,
-                options: field.options,
-              })),
-            })) as any,
-          })
-          console.log("Workflow updated via API")
-        } catch (apiError) {
-          console.error("Failed to update workflow via API, using localStorage:", apiError)
-          workflowStorage.update(workflowId, workflowData)
-        }
+        // Update full workflow including steps and fields via bridge
+        await WorkflowBridgeService.updateWorkflow(workflowId, {
+          name: workflowData.name,
+          description: workflowData.description,
+          isActive: workflowData.isActive,
+          steps: workflowData.steps.map(step => ({
+            id: step.id,
+            name: step.name,
+            description: step.description,
+            order: step.order,
+            fields: step.fields.map(field => ({
+              id: field.id,
+              label: field.label,
+              type: (field.type === "multiselect" ? "multi_select" : field.type) as any,
+              required: field.required,
+              placeholder: field.placeholder,
+              validation: field.validation,
+              options: field.options,
+            })),
+          })) as any,
+        })
+        console.log("Workflow updated via API")
       } else {
         // Create new workflow
-        try {
-          // Convert to FrontendWorkflow format for API
-          const apiWorkflow: Omit<FrontendWorkflow, "id" | "createdAt" | "updatedAt"> = {
-            name: workflowData.name,
-            description: workflowData.description,
-            isActive: workflowData.isActive,
-            steps: workflowData.steps.map(step => ({
-              id: step.id,
-              name: step.name,
-              description: step.description,
-              order: step.order,
-              fields: step.fields.map(field => ({
-                id: field.id,
-                name: field.id, // Use field.id as name for API
-                label: field.label,
-                type: field.type as FieldType,
-                order: 1, // Default order
+        // Convert to FrontendWorkflow format for API
+        const apiWorkflow: Omit<FrontendWorkflow, "id" | "createdAt" | "updatedAt"> = {
+          name: workflowData.name,
+          description: workflowData.description,
+          isActive: workflowData.isActive,
+          steps: workflowData.steps.map(step => ({
+            id: step.id,
+            name: step.name,
+            description: step.description,
+            order: step.order,
+            fields: step.fields.map(field => ({
+              id: field.id,
+              name: field.id, // Use field.id as name for API
+              label: field.label,
+              type: field.type as FieldType,
+              order: 1, // Default order
+              required: field.required,
+              placeholder: field.placeholder,
+              validation: field.validation ? {
+                min_value: field.validation.min,
+                max_value: field.validation.max,
+                pattern: field.validation.pattern,
                 required: field.required,
-                placeholder: field.placeholder,
-                validation: field.validation ? {
-                  min_value: field.validation.min,
-                  max_value: field.validation.max,
-                  pattern: field.validation.pattern,
-                  required: field.required,
-                  options: []
-                } : undefined
-              }))
+                options: []
+              } : undefined
             }))
-          }
-          
-          await WorkflowBridgeService.createWorkflow(apiWorkflow)
-          console.log("Workflow created via API")
-        } catch (apiError) {
-          console.error("Failed to create workflow via API, using localStorage:", apiError)
-          workflowStorage.create(workflowData)
+          }))
         }
+        
+        await WorkflowBridgeService.createWorkflow(apiWorkflow)
+        console.log("Workflow created via API")
       }
 
       onSave()
@@ -281,6 +302,19 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
   const handleDragEnd = () => {
     setDraggedStepId(null)
     setDragOverStepId(null)
+  }
+
+  // Show loader while loading workflow data (only when editing existing workflow)
+  // Don't show form UI until data is loaded
+  if (!isDataLoaded && workflowId) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto" />
+          <p className="text-muted-foreground">Loading workflow details...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
