@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,7 +19,8 @@ import {
   ShieldAlert,
 } from "lucide-react"
 import { dynamicWorkflowAPI } from "@/lib/api/services/dynamic-workflow-api.service"
-import type { AllMasterTableDataResponse } from "@/lib/api/types/dynamic-workflow.types"
+import { WorkflowBridgeService } from "@/lib/api/services/workflow-bridge.service"
+import type { AllMasterTableDataResponse, FrontendWorkflow } from "@/lib/api/types/dynamic-workflow.types"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,6 +34,13 @@ import {
 import { ERPCompanyDetails } from "@/components/erp-company-details"
 import { WorkflowDataViewPage } from "@/components/workflow-data-view-page"
 import { useToast } from "@/hooks/use-toast"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 interface ERPCompanyListProps {
   onStartOnboarding: (companyId?: number, workflowId?: string, recordId?: string) => void
@@ -52,6 +60,107 @@ interface MasterRecord {
   is_complete?: boolean
   onboarding_step?: number
   [key: string]: any // For other dynamic fields
+}
+
+interface WorkflowDisplayField {
+  fieldId: string
+  label: string
+}
+
+interface WorkflowMetadata {
+  displayFields: WorkflowDisplayField[]
+  primaryField?: WorkflowDisplayField
+}
+
+interface WorkflowOption {
+  id: string
+  name: string
+}
+
+const ALL_WORKFLOWS_VALUE = "all"
+
+const DEFAULT_DISPLAY_FIELDS: WorkflowDisplayField[] = [
+  { fieldId: "company_name", label: "Company Name" },
+  { fieldId: "country", label: "Country" },
+  { fieldId: "form_of_business", label: "Business Type" },
+]
+
+const buildWorkflowDisplayMap = (workflows: FrontendWorkflow[]): Record<string, WorkflowMetadata> => {
+  const map: Record<string, WorkflowMetadata> = {}
+
+  workflows.forEach((workflow) => {
+    const orderedSteps = [...(workflow.steps || [])].sort(
+      (a, b) => (a.order || 0) - (b.order || 0)
+    )
+
+    const flattenedFields = orderedSteps.flatMap((step) =>
+      (step.fields || []).map((field) => ({
+        fieldId: field.id,
+        label: field.label || field.id,
+        required: field.required ?? false,
+      }))
+    )
+
+    const prioritized = prioritizeDisplayFields(flattenedFields)
+    const displayFields = prioritized.length > 0 ? prioritized : DEFAULT_DISPLAY_FIELDS
+
+    map[workflow.id] = {
+      displayFields,
+      primaryField: displayFields[0],
+    }
+  })
+
+  return map
+}
+
+const prioritizeDisplayFields = (
+  fields: Array<{ fieldId: string; label: string; required: boolean }>
+): WorkflowDisplayField[] => {
+  const prioritized: WorkflowDisplayField[] = []
+  const pushUnique = (field: { fieldId: string; label: string }) => {
+    if (!prioritized.some((f) => f.fieldId === field.fieldId)) {
+      prioritized.push({ fieldId: field.fieldId, label: field.label })
+    }
+  }
+
+  const keywordBuckets = [
+    "company",
+    "business",
+    "type",
+    "country",
+    "currency",
+    "status",
+  ]
+
+  keywordBuckets.forEach((keyword) => {
+    fields.forEach((field) => {
+      if (field.label.toLowerCase().includes(keyword)) {
+        pushUnique(field)
+      }
+    })
+  })
+
+  fields
+    .filter((field) => field.required)
+    .forEach((field) => pushUnique(field))
+
+  fields.forEach((field) => pushUnique(field))
+
+  return prioritized
+}
+
+const formatRecordValue = (value: any): string => {
+  if (value === null || value === undefined) return "N/A"
+  if (typeof value === "string") {
+    return value.trim() === "" ? "N/A" : value
+  }
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No"
+  }
+  if (Array.isArray(value)) {
+    return value.length ? value.join(", ") : "N/A"
+  }
+  return String(value)
 }
 
 export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyListProps) {
@@ -79,6 +188,9 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
     recordId: null,
     companyName: null,
   })
+  const [workflowMetadata, setWorkflowMetadata] = useState<Record<string, WorkflowMetadata>>({})
+  const [availableWorkflows, setAvailableWorkflows] = useState<FrontendWorkflow[]>([])
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(ALL_WORKFLOWS_VALUE)
 
   // Ref to track if the effect has already been triggered (prevents duplicate API calls in React StrictMode)
   const loadEffectTriggeredRef = useRef(false)
@@ -104,26 +216,63 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
       }, 1500)
       return
     }
+    loadWorkflowMetadata()
     loadMasterRecords()
   }, []) // Load master records from server on mount
 
   useEffect(() => {
-    // Filter master records based on search query
-    if (searchQuery.trim() === "") {
-      setFilteredMasterRecords(masterRecords)
+    let records = masterRecords
+    if (selectedWorkflowId !== ALL_WORKFLOWS_VALUE) {
+      records = records.filter((record) => record.workflow_id === selectedWorkflowId)
+    }
+
+    const trimmedQuery = searchQuery.trim().toLowerCase()
+    if (trimmedQuery === "") {
+      setFilteredMasterRecords(records)
     } else {
-      const query = searchQuery.toLowerCase()
       setFilteredMasterRecords(
-        masterRecords.filter(
-          (record) =>
-            record.company_name?.toLowerCase().includes(query) ||
-            record.company_code?.toLowerCase().includes(query) ||
-            record.country?.toLowerCase().includes(query) ||
-            record.workflow_name?.toLowerCase().includes(query),
-        ),
+        records.filter((record) => {
+          return (
+            record.company_name?.toLowerCase().includes(trimmedQuery) ||
+            record.company_code?.toLowerCase().includes(trimmedQuery) ||
+            record.country?.toLowerCase().includes(trimmedQuery) ||
+            record.workflow_name?.toLowerCase().includes(trimmedQuery)
+          )
+        }),
       )
     }
-  }, [searchQuery, masterRecords])
+  }, [searchQuery, masterRecords, selectedWorkflowId])
+
+  const workflowSelectOptions = useMemo<WorkflowOption[]>(() => {
+    if (availableWorkflows.length > 0) {
+      return availableWorkflows.map((workflow) => ({
+        id: workflow.id,
+        name: workflow.name,
+      }))
+    }
+
+    const unique = new Map<string, WorkflowOption>()
+    masterRecords.forEach((record) => {
+      if (record.workflow_id && !unique.has(record.workflow_id)) {
+        unique.set(record.workflow_id, {
+          id: record.workflow_id,
+          name: record.workflow_name || record.workflow_id,
+        })
+      }
+    })
+
+    return Array.from(unique.values())
+  }, [availableWorkflows, masterRecords])
+
+  const loadWorkflowMetadata = async () => {
+    try {
+      const workflows = await WorkflowBridgeService.getAllWorkflows()
+      setAvailableWorkflows(workflows)
+      setWorkflowMetadata(buildWorkflowDisplayMap(workflows))
+    } catch (error) {
+      console.error("Failed to load workflow metadata for company list:", error)
+    }
+  }
 
 
   const loadMasterRecords = async () => {
@@ -168,15 +317,15 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
             workflow_id: workflow.workflow_id,
             workflow_name: workflow.workflow_name,
             company_id: record.company_id, // Preserve company_id from record
-            // Direct field access - these fields exist in the API response
-            company_name: record.company_name || "N/A",
-            company_code: record.company_code || String(record.company_id || record.id || "N/A"),
-            country: record.country || record.address_country || "N/A",
-            form_of_business: record.form_of_business || "N/A",
-            accounting_currency: record.accounting_currency || "N/A",
+            // Direct field access - keep undefined so UI can fall back gracefully
+            company_name: record.company_name ?? "",
+            company_code: record.company_code ?? String(record.company_id || record.id || ""),
+            country: record.country ?? record.address_country ?? "",
+            form_of_business: record.form_of_business ?? "",
+            accounting_currency: record.accounting_currency ?? "",
             // Determine completion status - assume complete if all required fields are present
-            is_complete: record.is_complete !== undefined 
-              ? record.is_complete 
+            is_complete: record.is_complete !== undefined
+              ? record.is_complete
               : !!(record.company_name && record.company_code),
             onboarding_step: record.onboarding_step || 9,
           }
@@ -422,17 +571,34 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
         </Button>
       </div>
 
-      {/* Search Bar */}
+      {/* Search & Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by company name, code, country, or workflow..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by company name, code, country, or workflow..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <div className="md:w-64">
+              <Select value={selectedWorkflowId} onValueChange={setSelectedWorkflowId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by workflow" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_WORKFLOWS_VALUE}>All workflows</SelectItem>
+                  {workflowSelectOptions.map((workflow) => (
+                    <SelectItem key={workflow.id} value={workflow.id}>
+                      {workflow.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -453,103 +619,108 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {/* Display Master Records First - These have the actual workflow data */}
-          {filteredMasterRecords.map((record, index) => (
-            <Card key={`master-${record.workflow_id}-${record.id}-${index}`} className="hover-lift">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
-                      <Building2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{record.company_name || "N/A"}</CardTitle>
-                      <CardDescription className="text-xs">{record.company_code || record.id || "No code"}</CardDescription>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Status Badge */}
-                <div>
-                  {record.is_complete ? (
-                    <Badge variant="default" className="bg-green-600">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      Complete
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary">
-                      <Clock className="h-3 w-3 mr-1" />
-                      {record.onboarding_step ? `Step ${record.onboarding_step}/9` : "In Progress"}
-                    </Badge>
-                  )}
-                </div>
+          {filteredMasterRecords.map((record, index) => {
+            const workflowMeta = workflowMetadata[record.workflow_id]
+            const fieldsToRender =
+              (workflowMeta?.displayFields?.length ? workflowMeta.displayFields : DEFAULT_DISPLAY_FIELDS).slice(0, 3)
+            const fallbackTitle = workflowMeta?.primaryField
+              ? formatRecordValue(record[workflowMeta.primaryField.fieldId])
+              : undefined
+            const cardTitle = record.company_name?.trim()
+              ? record.company_name
+              : fallbackTitle && fallbackTitle !== "N/A"
+                ? fallbackTitle
+                : "N/A"
+            const cardSubtitle = record.company_code?.trim() ? record.company_code : formatRecordValue(record.id)
 
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Country:</span>
-                    <span className="font-medium truncate ml-2">
-                      {record.country || record.address_country || "N/A"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Business Type:</span>
-                    <span className="font-medium truncate ml-2">
-                      {record.form_of_business || "N/A"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Currency:</span>
-                    <span className="font-medium">
-                      {record.accounting_currency || "N/A"}
-                    </span>
-                  </div>
-                  {record.workflow_name && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Workflow:</span>
-                      <span className="font-medium truncate ml-2 text-xs">{record.workflow_name}</span>
+            return (
+              <Card key={`master-${record.workflow_id}-${record.id}-${index}`} className="hover-lift">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
+                        <Building2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{cardTitle}</CardTitle>
+                        <CardDescription className="text-xs">{cardSubtitle || "No code"}</CardDescription>
+                      </div>
                     </div>
-                  )}
-                </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Status Badge */}
+                  <div>
+                    {record.is_complete ? (
+                      <Badge variant="default" className="bg-green-600">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />
+                        Complete
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary">
+                        <Clock className="h-3 w-3 mr-1" />
+                        {record.onboarding_step ? `Step ${record.onboarding_step}/9` : "In Progress"}
+                      </Badge>
+                    )}
+                  </div>
 
-                {/* Action Buttons */}
-                <div className="flex space-x-2 pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 bg-transparent"
-                    onClick={() => handleViewMasterRecord(record)}
-                  >
-                    <Eye className="h-3 w-3 mr-1" />
-                    View
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 bg-transparent"
-                    onClick={() => {
-                      // Use company_id if available, otherwise try to parse id as number
-                      const companyId = record.company_id || (typeof record.id === "number" ? record.id : undefined)
-                      const workflowId = record.workflow_id
-                      // Use record.id as recordId (convert to string if needed)
-                      const recordId = typeof record.id === "string" ? record.id : String(record.id)
-                      onStartOnboarding(companyId, workflowId, recordId)
-                    }}
-                  >
-                    <Edit className="h-3 w-3 mr-1" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-destructive hover:text-destructive bg-transparent"
-                    onClick={() => setDeleteCompanyId(record.id)}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  <div className="space-y-2 text-sm">
+                    {fieldsToRender.map((field) => (
+                      <div className="flex justify-between" key={`${record.workflow_id}-${field.fieldId}`}>
+                        <span className="text-muted-foreground">{field.label}:</span>
+                        <span className="font-medium truncate ml-2">
+                          {formatRecordValue(record[field.fieldId])}
+                        </span>
+                      </div>
+                    ))}
+                    {record.workflow_name && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Workflow:</span>
+                        <span className="font-medium truncate ml-2 text-xs">{record.workflow_name}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex space-x-2 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 bg-transparent"
+                      onClick={() => handleViewMasterRecord(record)}
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      View
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 bg-transparent"
+                      onClick={() => {
+                        // Use company_id if available, otherwise try to parse id as number
+                        const companyId = record.company_id || (typeof record.id === "number" ? record.id : undefined)
+                        const workflowId = record.workflow_id
+                        // Use record.id as recordId (convert to string if needed)
+                        const recordId = typeof record.id === "string" ? record.id : String(record.id)
+                        onStartOnboarding(companyId, workflowId, recordId)
+                      }}
+                    >
+                      <Edit className="h-3 w-3 mr-1" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive bg-transparent"
+                      onClick={() => setDeleteCompanyId(record.id)}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       )}
 

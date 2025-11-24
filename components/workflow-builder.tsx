@@ -81,18 +81,29 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
           setIsActive(apiWorkflow.isActive)
           
           // Normalize step orders to start from 1 (fix for steps with order 0)
+          // Sort fields by order from API to maintain correct sequence
           const stepsWithFields = apiWorkflow.steps.map((step, index) => ({
             ...step,
             order: step.order && step.order > 0 ? step.order : index + 1,
-            fields: (step.fields || []).map((field) => ({
-              id: field.id,
-              label: field.label,
-              type: field.type as any,
-              required: field.required,
-              placeholder: field.placeholder,
-              validation: field.validation,
-              options: (field as any).options,
-            })),
+            fields: (step.fields || [])
+              .sort((a, b) => {
+                // Sort by order/field_order from API to maintain correct sequence
+                // Check both 'order' and 'field_order' properties
+                const orderA = (a as any).field_order ?? (a as any).order ?? 0
+                const orderB = (b as any).field_order ?? (b as any).order ?? 0
+                return orderA - orderB
+              })
+              .map((field, index) => ({
+                id: field.id,
+                label: field.label,
+                type: field.type as any,
+                required: field.required,
+                placeholder: field.placeholder,
+                validation: field.validation,
+                options: (field as any).options,
+                // CRITICAL: Preserve the order from API response, or use array index as fallback
+                order: (field as any).field_order ?? (field as any).order ?? (index + 1),
+              })),
           }))
           setSteps(stepsWithFields)
           
@@ -194,6 +205,8 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
       if (workflowId) {
         // Update existing workflow
         // Update full workflow including steps and fields via bridge
+        // IMPORTANT: Use the current array order of fields (which reflects user's drag-and-drop reordering)
+        // The array index becomes the field_order (1, 2, 3...)
         await WorkflowBridgeService.updateWorkflow(workflowId, {
           name: workflowData.name,
           description: workflowData.description,
@@ -203,7 +216,9 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
             name: step.name,
             description: step.description,
             order: step.order,
-            fields: step.fields.map(field => ({
+            // Use fields in their current array order - this reflects user's reordering via drag-and-drop
+            // fieldIndex + 1 will be the sequential order (1, 2, 3...)
+            fields: step.fields.map((field, fieldIndex) => ({
               id: field.id,
               label: field.label,
               type: (field.type === "multiselect" ? "multi_select" : field.type) as any,
@@ -211,6 +226,7 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
               placeholder: field.placeholder,
               validation: field.validation,
               options: field.options,
+              order: fieldIndex + 1, // Sequential order based on current array position
             })),
           })) as any,
         })
@@ -227,12 +243,14 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
             name: step.name,
             description: step.description,
             order: step.order,
-            fields: step.fields.map(field => ({
+            // Use fields in their current array order
+            // fieldIndex + 1 will be the sequential order (1, 2, 3...)
+            fields: step.fields.map((field, fieldIndex) => ({
               id: field.id,
               name: field.id, // Use field.id as name for API
               label: field.label,
               type: field.type as FieldType,
-              order: 1, // Default order
+              order: fieldIndex + 1, // Sequential order based on current array position
               required: field.required,
               placeholder: field.placeholder,
               validation: field.validation ? {

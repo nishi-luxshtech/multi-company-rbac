@@ -25,6 +25,7 @@ export interface WorkflowField {
   label: string
   placeholder?: string
   required: boolean
+  order?: number // Field display order (1, 2, 3...)
   options?: string[] // For select, radio, combobox, multiselect fields
   validation?: {
     min?: number

@@ -130,29 +130,36 @@ export class WorkflowBridgeService {
           name: s.name,
           description: s.description || "",
           order: s.order || 0, // DynamicWorkflowStep uses 'order' field
-          fields: (s.fields || []).map((f) => {
-            const vr = f.validation
-            const rawOptions = vr?.options || f.options
-            const normalizedOptions = Array.isArray(rawOptions)
-              ? rawOptions.map((opt: any) => (typeof opt === "string" ? opt : opt?.label ?? opt?.value)).filter(Boolean)
-              : undefined
-            return {
-              id: f.id,
-              label: f.label,
-              type: f.type as any,
-              required: f.required,
-              placeholder: f.placeholder,
-              validation: vr
-                ? {
-                    min: vr.min ?? vr.min_value ?? vr.min_length,
-                    max: vr.max ?? vr.max_value ?? vr.max_length,
-                    pattern: vr.pattern,
-                    accept: undefined,
-                  }
-                : undefined,
-              options: normalizedOptions,
-            }
-          }),
+          fields: (s.fields || [])
+            .sort((a, b) => {
+              // Sort fields by order from API to maintain correct sequence
+              const orderA = a.order ?? 0
+              const orderB = b.order ?? 0
+              return orderA - orderB
+            })
+            .map((f) => {
+              const vr = f.validation
+              const rawOptions = vr?.options || f.options
+              const normalizedOptions = Array.isArray(rawOptions)
+                ? rawOptions.map((opt: any) => (typeof opt === "string" ? opt : opt?.label ?? opt?.value)).filter(Boolean)
+                : undefined
+              return {
+                id: f.id,
+                label: f.label,
+                type: f.type as any,
+                required: f.required,
+                placeholder: f.placeholder,
+                validation: vr
+                  ? {
+                      min: vr.min ?? vr.min_value ?? vr.min_length,
+                      max: vr.max ?? vr.max_value ?? vr.max_length,
+                      pattern: vr.pattern,
+                      accept: undefined,
+                    }
+                  : undefined,
+                options: normalizedOptions,
+              }
+            }),
         })),
         isActive: wf.is_active ?? true,
         createdAt: wf.created_at,
@@ -181,29 +188,39 @@ export class WorkflowBridgeService {
           name: s.name,
           description: s.description || "",
           order: s.step_order,
-          fields: (s.fields || []).map((f) => {
-            const vr = (f as any).validation_rules || (f as any).validation || undefined
-            const rawOptions = vr?.options || (f as any).options
-            const normalizedOptions = Array.isArray(rawOptions)
-              ? rawOptions.map((opt: any) => (typeof opt === "string" ? opt : opt?.label ?? opt?.value)).filter(Boolean)
-              : undefined
-            return {
-              id: (f as any).id,
-              label: (f as any).label ?? (f as any).field_label ?? (f as any).field_name ?? "",
-              type: ((f as any).type ?? (f as any).field_type ?? "text") as any,
-              required: (f as any).required ?? (f as any).is_required ?? false,
-              placeholder: (f as any).placeholder,
-              validation: vr
-                ? {
-                    min: vr.min ?? vr.min_value ?? vr.min_length,
-                    max: vr.max ?? vr.max_value ?? vr.max_length,
-                    pattern: vr.pattern,
-                    accept: undefined,
-                  }
-                : undefined,
-              options: normalizedOptions,
-            }
-          }),
+          fields: (s.fields || [])
+            .sort((a, b) => {
+              // Sort fields by order from API to maintain correct sequence
+              const orderA = (a as any).field_order ?? (a as any).order ?? 0
+              const orderB = (b as any).field_order ?? (b as any).order ?? 0
+              return orderA - orderB
+            })
+            .map((f, index) => {
+              const vr = (f as any).validation_rules || (f as any).validation || undefined
+              const rawOptions = vr?.options || (f as any).options
+              const normalizedOptions = Array.isArray(rawOptions)
+                ? rawOptions.map((opt: any) => (typeof opt === "string" ? opt : opt?.label ?? opt?.value)).filter(Boolean)
+                : undefined
+              // CRITICAL: Preserve order from API (field_order or order), fallback to index+1
+              const fieldOrder = (f as any).field_order ?? (f as any).order ?? (index + 1)
+              return {
+                id: (f as any).id,
+                label: (f as any).label ?? (f as any).field_label ?? (f as any).field_name ?? "",
+                type: ((f as any).type ?? (f as any).field_type ?? "text") as any,
+                required: (f as any).required ?? (f as any).is_required ?? false,
+                placeholder: (f as any).placeholder,
+                validation: vr
+                  ? {
+                      min: vr.min ?? vr.min_value ?? vr.min_length,
+                      max: vr.max ?? vr.max_value ?? vr.max_length,
+                      pattern: vr.pattern,
+                      accept: undefined,
+                    }
+                  : undefined,
+                options: normalizedOptions,
+                order: fieldOrder, // PRESERVE ORDER FROM API
+              }
+            }),
         })),
         isActive: wf.is_active ?? true,
         createdAt: wf.created_at,
@@ -248,14 +265,17 @@ export class WorkflowBridgeService {
           name: step.name,
           description: step.description,
           step_order: step.order,
-          fields: step.fields.map((field) => {
+          // IMPORTANT: Use fields in their current array order
+          // The array index (fieldIndex) becomes the sequential field_order (1, 2, 3...)
+          fields: step.fields.map((field, fieldIndex) => {
             const t: any = field.type
             const backendType = t === "multiselect" ? "multi_select" : t
+            const sequentialOrder = fieldIndex + 1
             return {
               field_name: field.id,
               field_label: field.label,
               field_type: backendType,
-              field_order: 1,
+              field_order: sequentialOrder, // Sequential order: 1, 2, 3... based on array position
               is_required: field.required,
               placeholder: field.placeholder,
               validation_rules: field.validation
@@ -271,6 +291,14 @@ export class WorkflowBridgeService {
             }
           }),
         }))
+        
+        // Debug: Log the payload to verify field_order values
+        console.log("Workflow update payload - field orders:", 
+          payload.steps.map(s => ({
+            step: s.name,
+            fields: s.fields.map((f: any) => ({ label: f.field_label, order: f.field_order }))
+          }))
+        )
       }
 
       await workflowsApi.update(id, payload)
@@ -286,12 +314,19 @@ export class WorkflowBridgeService {
           name: s.name,
           description: s.description || "",
           order: s.step_order,
-          fields: (s.fields || []).map((f) => ({
-            id: (f as any).id,
-            label: (f as any).label ?? (f as any).field_label ?? (f as any).field_name ?? "",
-            type: ((f as any).type ?? (f as any).field_type ?? "text") as any,
-            required: (f as any).required ?? (f as any).is_required ?? false,
-          })),
+          fields: (s.fields || [])
+            .sort((a, b) => {
+              // Sort fields by order from API to maintain correct sequence
+              const orderA = (a as any).field_order ?? (a as any).order ?? 0
+              const orderB = (b as any).field_order ?? (b as any).order ?? 0
+              return orderA - orderB
+            })
+            .map((f) => ({
+              id: (f as any).id,
+              label: (f as any).label ?? (f as any).field_label ?? (f as any).field_name ?? "",
+              type: ((f as any).type ?? (f as any).field_type ?? "text") as any,
+              required: (f as any).required ?? (f as any).is_required ?? false,
+            })),
         })),
         isActive: full.is_active ?? updates.isActive ?? true,
         createdAt: full.created_at,
