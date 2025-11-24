@@ -2,10 +2,12 @@ services:
   - type: web
     name: multi-company-rbac-frontend
     env: node
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci --legacy-peer-deps && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NPM_CONFIG_LEGACY_PEER_DEPS
+        value: "true"
 
 
