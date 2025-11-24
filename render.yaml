@@ -2,6 +2,7 @@ services:
   - type: web
     name: multi-company-rbac-frontend
     env: node
+    plan: starter
     buildCommand: npm ci --legacy-peer-deps && npm run build
     startCommand: npm start
     envVars:
