@@ -36,6 +36,8 @@ export interface ValidationRule {
   max_length?: number
   min_value?: number
   max_value?: number
+  min?: number
+  max?: number
   pattern?: string
   required?: boolean
   options?: string[]
@@ -92,6 +94,7 @@ export interface DynamicWorkflowField {
   required: boolean
   placeholder?: string
   validation?: ValidationRule
+  options?: string[]
   default_value?: string | number | boolean | string[]
   help_text?: string
   depends_on?: string
@@ -114,6 +117,7 @@ export interface DynamicWorkflowResponse {
   steps: DynamicWorkflowStep[]
   created_at: string
   updated_at?: string
+  is_active?: boolean
 }
 
 // ===== Table Schema =====

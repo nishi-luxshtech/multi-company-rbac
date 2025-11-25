@@ -9,7 +9,18 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Plus, Trash2, GripVertical, Save, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  GripVertical,
+  Save,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  CheckCircle2,
+  Circle,
+} from "lucide-react"
 import type { WorkflowStep } from "@/lib/workflow-storage"
 import { WorkflowBridgeService } from "@/lib/api/services/workflow-bridge.service"
 import { FrontendWorkflow, FieldType } from "@/lib/api/types/dynamic-workflow.types"
@@ -22,6 +33,8 @@ interface WorkflowBuilderProps {
   onSave: () => void
 }
 
+type SaveStage = "idle" | "preparing" | "syncing" | "finalizing"
+
 export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderProps) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -29,11 +42,21 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
   const [steps, setSteps] = useState<WorkflowStep[]>([])
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set())
   const [isSaving, setIsSaving] = useState(false)
+  const [saveStage, setSaveStage] = useState<SaveStage>("idle")
   const [draggedStepId, setDraggedStepId] = useState<string | null>(null)
   const [dragOverStepId, setDragOverStepId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Track if data has been loaded (for edit mode) or if it's a new workflow
   const [isDataLoaded, setIsDataLoaded] = useState<boolean>(!workflowId) // true for new workflow, false for edit mode
+  const saveStageOrder: SaveStage[] = ["preparing", "syncing", "finalizing"]
+  const saveProgressSteps: Array<{ id: SaveStage; label: string }> = [
+    { id: "preparing", label: "Preparing workflow changes" },
+    {
+      id: "syncing",
+      label: workflowId ? "Updating workflow on the server" : "Creating workflow on the server",
+    },
+    { id: "finalizing", label: "Finalizing changes" },
+  ]
   
   // Ref to track the last loaded workflowId and prevent duplicate API calls
   const lastLoadedWorkflowIdRef = useRef<string | null>(null)
@@ -191,6 +214,7 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
       return
     }
 
+    setSaveStage("preparing")
     setIsSaving(true)
     setError(null)
     
@@ -207,6 +231,7 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
         // Update full workflow including steps and fields via bridge
         // IMPORTANT: Use the current array order of fields (which reflects user's drag-and-drop reordering)
         // The array index becomes the field_order (1, 2, 3...)
+        setSaveStage("syncing")
         await WorkflowBridgeService.updateWorkflow(workflowId, {
           name: workflowData.name,
           description: workflowData.description,
@@ -234,6 +259,7 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
       } else {
         // Create new workflow
         // Convert to FrontendWorkflow format for API
+        setSaveStage("syncing")
         const apiWorkflow: Omit<FrontendWorkflow, "id" | "createdAt" | "updatedAt"> = {
           name: workflowData.name,
           description: workflowData.description,
@@ -268,12 +294,14 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
         console.log("Workflow created via API")
       }
 
+      setSaveStage("finalizing")
       onSave()
     } catch (error) {
       console.error("Failed to save workflow:", error)
       setError("Failed to save workflow")
     } finally {
       setIsSaving(false)
+      setSaveStage("idle")
     }
   }
 
@@ -364,6 +392,50 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
                 <p>{error}</p>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Progress Indicator */}
+      {isSaving && (
+        <div className="border border-blue-100 bg-blue-50 rounded-md p-4">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+            <div>
+              <p className="font-semibold text-blue-900">Saving workflow...</p>
+              <p className="text-sm text-blue-700">Please keep this tab open while we apply your changes.</p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-col gap-2">
+            {saveProgressSteps.map((step) => {
+              const currentStageIndex = saveStageOrder.indexOf(saveStage)
+              const stepIndex = saveStageOrder.indexOf(step.id)
+              const isCompleted = currentStageIndex > stepIndex
+              const isActive = currentStageIndex === stepIndex && saveStage !== "idle"
+
+              return (
+                <div key={step.id} className="flex items-center gap-2 text-sm">
+                  {isCompleted ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  ) : isActive ? (
+                    <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+                  ) : (
+                    <Circle className="h-4 w-4 text-blue-300" />
+                  )}
+                  <span
+                    className={`${
+                      isCompleted
+                        ? "text-green-700"
+                        : isActive
+                          ? "text-blue-900 font-medium"
+                          : "text-blue-700"
+                    }`}
+                  >
+                    {step.label}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

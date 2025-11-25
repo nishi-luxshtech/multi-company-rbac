@@ -6,7 +6,7 @@
 
 import { dynamicWorkflowAPI } from "./dynamic-workflow-api.service"
 import { workflowsApi } from "./workflows-api.service"
-import type { WorkflowApiResponse } from "@/lib/api/types/workflow.types"
+import type { WorkflowApiResponse, WorkflowFieldApi, WorkflowStepApi } from "@/lib/api/types/workflow.types"
 import {
   DynamicWorkflowResponse,
   DynamicWorkflowCreate,
@@ -14,9 +14,18 @@ import {
   FrontendWorkflowStep,
   FrontendWorkflowField,
   FieldType,
+  ValidationRule,
+  DynamicWorkflowField,
 } from "../types/dynamic-workflow.types"
 
 export class WorkflowBridgeService {
+  private static optionEnabledTypes = ["select", "radio", "combobox", "multiselect", "multi_select"]
+
+  private static fieldSupportsOptions(fieldType?: string) {
+    if (!fieldType) return false
+    const normalized = fieldType.replace("-", "_").toLowerCase()
+    return WorkflowBridgeService.optionEnabledTypes.includes(normalized)
+  }
   /**
    * Convert API DynamicWorkflowResponse to frontend Workflow type
    */
@@ -97,15 +106,20 @@ export class WorkflowBridgeService {
           order: 1, // Default order
           required: field.required,
           placeholder: field.placeholder,
-          validation: field.validation
-            ? {
-                min_value: field.validation.min,
-                max_value: field.validation.max,
-                pattern: field.validation.pattern,
-                required: field.required,
-                options: field.options,
-              }
-            : undefined,
+          validation: (() => {
+            const supportsOptions = WorkflowBridgeService.fieldSupportsOptions(field.type)
+            const validationPayload: ValidationRule = {
+              min_value: field.validation?.min,
+              max_value: field.validation?.max,
+              pattern: field.validation?.pattern,
+              required: field.required,
+            }
+            if (supportsOptions && field.options?.length) {
+              validationPayload.options = field.options
+            }
+            const hasValues = Object.values(validationPayload).some((value) => value !== undefined)
+            return hasValues ? validationPayload : undefined
+          })(),
         })),
       })),
     }
@@ -131,15 +145,15 @@ export class WorkflowBridgeService {
           description: s.description || "",
           order: s.order || 0, // DynamicWorkflowStep uses 'order' field
           fields: (s.fields || [])
-            .sort((a, b) => {
+            .sort((a: DynamicWorkflowField, b: DynamicWorkflowField) => {
               // Sort fields by order from API to maintain correct sequence
               const orderA = a.order ?? 0
               const orderB = b.order ?? 0
               return orderA - orderB
             })
-            .map((f) => {
+            .map((f: DynamicWorkflowField) => {
               const vr = f.validation
-              const rawOptions = vr?.options || f.options
+              const rawOptions = vr?.options || (f as any).options
               const normalizedOptions = Array.isArray(rawOptions)
                 ? rawOptions.map((opt: any) => (typeof opt === "string" ? opt : opt?.label ?? opt?.value)).filter(Boolean)
                 : undefined
@@ -189,13 +203,13 @@ export class WorkflowBridgeService {
           description: s.description || "",
           order: s.step_order,
           fields: (s.fields || [])
-            .sort((a, b) => {
+            .sort((a: WorkflowFieldApi, b: WorkflowFieldApi) => {
               // Sort fields by order from API to maintain correct sequence
               const orderA = (a as any).field_order ?? (a as any).order ?? 0
               const orderB = (b as any).field_order ?? (b as any).order ?? 0
               return orderA - orderB
             })
-            .map((f, index) => {
+            .map((f: WorkflowFieldApi, index) => {
               const vr = (f as any).validation_rules || (f as any).validation || undefined
               const rawOptions = vr?.options || (f as any).options
               const normalizedOptions = Array.isArray(rawOptions)
@@ -271,6 +285,7 @@ export class WorkflowBridgeService {
             const t: any = field.type
             const backendType = t === "multiselect" ? "multi_select" : t
             const sequentialOrder = fieldIndex + 1
+            const supportsOptions = WorkflowBridgeService.fieldSupportsOptions(field.type)
             return {
               field_name: field.id,
               field_label: field.label,
@@ -278,23 +293,27 @@ export class WorkflowBridgeService {
               field_order: sequentialOrder, // Sequential order: 1, 2, 3... based on array position
               is_required: field.required,
               placeholder: field.placeholder,
-              validation_rules: field.validation
-                ? {
-                    min_length: field.validation.min,
-                    max_length: field.validation.max,
-                    min_value: field.validation.min,
-                    max_value: field.validation.max,
-                    pattern: field.validation.pattern,
-                    options: field.options,
-                  }
-                : undefined,
+              validation_rules: (() => {
+                const validationPayload: ValidationRule = {
+                  min_length: field.validation?.min,
+                  max_length: field.validation?.max,
+                  min_value: field.validation?.min,
+                  max_value: field.validation?.max,
+                  pattern: field.validation?.pattern,
+                }
+                if (supportsOptions && field.options?.length) {
+                  validationPayload.options = field.options
+                }
+                const hasValues = Object.values(validationPayload).some((value) => value !== undefined)
+                return hasValues ? validationPayload : undefined
+              })(),
             }
           }),
         }))
         
         // Debug: Log the payload to verify field_order values
         console.log("Workflow update payload - field orders:", 
-          payload.steps.map(s => ({
+          payload.steps.map((s: any) => ({
             step: s.name,
             fields: s.fields.map((f: any) => ({ label: f.field_label, order: f.field_order }))
           }))
@@ -309,23 +328,23 @@ export class WorkflowBridgeService {
         id: full.id,
         name: full.name,
         description: full.description || "",
-        steps: (full.steps || []).map((s) => ({
+        steps: (full.steps || []).map((s: WorkflowStepApi) => ({
           id: s.id,
           name: s.name,
           description: s.description || "",
           order: s.step_order,
           fields: (s.fields || [])
-            .sort((a, b) => {
+            .sort((a: WorkflowFieldApi, b: WorkflowFieldApi) => {
               // Sort fields by order from API to maintain correct sequence
               const orderA = (a as any).field_order ?? (a as any).order ?? 0
               const orderB = (b as any).field_order ?? (b as any).order ?? 0
               return orderA - orderB
             })
-            .map((f) => ({
-              id: (f as any).id,
-              label: (f as any).label ?? (f as any).field_label ?? (f as any).field_name ?? "",
-              type: ((f as any).type ?? (f as any).field_type ?? "text") as any,
-              required: (f as any).required ?? (f as any).is_required ?? false,
+            .map((f: WorkflowFieldApi) => ({
+              id: f.id,
+              label: f.label ?? (f as any).field_label ?? (f as any).field_name ?? "",
+              type: (f.type ?? (f as any).field_type ?? "text") as any,
+              required: f.required ?? (f as any).is_required ?? false,
             })),
         })),
         isActive: full.is_active ?? updates.isActive ?? true,

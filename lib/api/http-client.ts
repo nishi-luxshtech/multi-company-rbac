@@ -33,11 +33,16 @@ export class ApiClient {
     this.client.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
         const token = this.getAuthToken()
+        const fullUrl = `${config.baseURL || ""}${config.url || ""}`
+        
         if (token && config.headers) {
           config.headers.Authorization = `Bearer ${token}`
-          console.log("Request with token:", config.url)
+          console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`, {
+            hasAuth: true,
+            dataSize: config.data ? JSON.stringify(config.data).length : 0,
+          })
         } else {
-          console.warn("No auth token found for request:", config.url)
+          console.warn(`[API Request] ${config.method?.toUpperCase()} ${fullUrl} - No auth token`)
         }
         return config
       },
@@ -92,28 +97,90 @@ export class ApiClient {
   }
 
   private handleError(error: AxiosError): ApiError {
+    // Log detailed error information for debugging
+    console.error("API Error Details:", {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      url: error.config?.url,
+      method: error.config?.method,
+      data: error.response?.data,
+      request: error.request ? "Request sent but no response" : "No request sent",
+    })
+
     if (error.response) {
       // Server responded with error status
       const status = error.response.status
       const data = error.response.data as any
+      
+      // Extract detailed error message
+      let errorMessage = "An error occurred"
+      if (data?.detail) {
+        // Handle Pydantic validation errors (array format)
+        if (Array.isArray(data.detail)) {
+          errorMessage = data.detail.map((err: any) => {
+            const loc = err.loc ? err.loc.join(".") : ""
+            return `${loc}: ${err.msg}`
+          }).join("; ")
+        } else if (typeof data.detail === "string") {
+          errorMessage = data.detail
+        } else if (typeof data.detail === "object") {
+          errorMessage = JSON.stringify(data.detail)
+        }
+      } else if (data?.message) {
+        errorMessage = data.message
+      } else if (typeof data === "string") {
+        errorMessage = data
+      }
 
       return {
-        message: data?.detail || data?.message || "An error occurred",
+        message: errorMessage,
         status,
-        code: data?.code,
+        code: data?.code || `HTTP_${status}`,
         details: data,
       }
     } else if (error.request) {
       // Request made but no response received
+      // Check for specific error codes
+      let errorMessage = "Network error. Please check your connection."
+      let errorCode = "NETWORK_ERROR"
+      
+      if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+        errorMessage = "Request timeout. The server took too long to respond. Please try again."
+        errorCode = "TIMEOUT_ERROR"
+      } else if (error.code === "ERR_NETWORK") {
+        errorMessage = "Network error. Unable to reach the server. Please check if the server is running."
+        errorCode = "NETWORK_ERROR"
+      } else if (error.code === "ERR_CANCELED") {
+        errorMessage = "Request was canceled."
+        errorCode = "CANCELED_ERROR"
+      }
+      
+      console.error("Network error details:", {
+        code: error.code,
+        message: error.message,
+        url: error.config?.url,
+        timeout: error.config?.timeout,
+      })
+
       return {
-        message: "Network error. Please check your connection.",
-        code: "NETWORK_ERROR",
+        message: errorMessage,
+        code: errorCode,
+        details: {
+          originalError: error.message,
+          errorCode: error.code,
+          url: error.config?.url,
+        },
       }
     } else {
       // Something else happened
       return {
         message: error.message || "An unexpected error occurred",
         code: "UNKNOWN_ERROR",
+        details: {
+          originalError: error.message,
+        },
       }
     }
   }
