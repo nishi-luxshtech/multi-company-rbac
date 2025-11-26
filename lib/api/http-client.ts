@@ -34,15 +34,22 @@ export class ApiClient {
       (config: InternalAxiosRequestConfig) => {
         const token = this.getAuthToken()
         const fullUrl = `${config.baseURL || ""}${config.url || ""}`
+        const params = config.params ? `?${new URLSearchParams(config.params as any).toString()}` : ""
+        const urlWithParams = `${fullUrl}${params}`
         
         if (token && config.headers) {
           config.headers.Authorization = `Bearer ${token}`
-          console.log(`[API Request] ${config.method?.toUpperCase()} ${fullUrl}`, {
+          console.log(`[API Request] ${config.method?.toUpperCase()} ${urlWithParams}`, {
             hasAuth: true,
+            params: config.params,
+            data: config.data,
             dataSize: config.data ? JSON.stringify(config.data).length : 0,
           })
         } else {
-          console.warn(`[API Request] ${config.method?.toUpperCase()} ${fullUrl} - No auth token`)
+          console.warn(`[API Request] ${config.method?.toUpperCase()} ${urlWithParams} - No auth token`, {
+            params: config.params,
+            data: config.data,
+          })
         }
         return config
       },

@@ -276,6 +276,7 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
               name: field.id, // Use field.id as name for API
               label: field.label,
               type: field.type as FieldType,
+              options: field.options,
               order: fieldIndex + 1, // Sequential order based on current array position
               required: field.required,
               placeholder: field.placeholder,

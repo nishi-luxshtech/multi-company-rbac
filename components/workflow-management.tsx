@@ -18,6 +18,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Label } from "@/components/ui/label"
 import { WorkflowConnector } from "./workflow-connector"
 import { WorkflowCanvasBuilder } from "./workflow-canvas-builder"
 
@@ -29,6 +31,7 @@ interface WorkflowManagementProps {
 export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: WorkflowManagementProps) {
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [deleteWorkflowId, setDeleteWorkflowId] = useState<string | null>(null)
+  const [deleteType, setDeleteType] = useState<"soft" | "hard">("soft")
   const [connectingWorkflowId, setConnectingWorkflowId] = useState<string | null>(null)
   const [showCanvasBuilder, setShowCanvasBuilder] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -149,24 +152,40 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
     if (deleteWorkflowId) {
       try {
         setLoading(true)
+        setError(null) // Clear previous errors
+        const hardDelete = deleteType === "hard"
+        
+        console.log(`[WorkflowDelete] Starting ${hardDelete ? "hard" : "soft"} delete for workflow:`, deleteWorkflowId)
+        
         // Try to delete from API first
-        const success = await WorkflowBridgeService.deleteWorkflow(deleteWorkflowId)
+        const success = await WorkflowBridgeService.deleteWorkflow(deleteWorkflowId, hardDelete)
         if (success) {
-          // Also delete from localStorage as backup
-          workflowStorage.delete(deleteWorkflowId)
+          // Also delete from localStorage as backup (only for hard delete, soft delete keeps it)
+          if (hardDelete) {
+            workflowStorage.delete(deleteWorkflowId)
+          }
         } else {
-          // Fallback to localStorage only
+          // Fallback to localStorage only (only for hard delete)
+          if (hardDelete) {
+            workflowStorage.delete(deleteWorkflowId)
+          }
+        }
+        await loadWorkflows()
+        setDeleteWorkflowId(null)
+        setDeleteType("soft") // Reset to default
+      } catch (err) {
+        console.error("Failed to delete workflow from API:", err)
+        // For hard delete, still try to remove from localStorage
+        if (deleteType === "hard") {
           workflowStorage.delete(deleteWorkflowId)
         }
         await loadWorkflows()
         setDeleteWorkflowId(null)
-      } catch (err) {
-        console.error("Failed to delete workflow from API, using localStorage:", err)
-        // Fallback to localStorage
-        workflowStorage.delete(deleteWorkflowId)
-        await loadWorkflows()
-        setDeleteWorkflowId(null)
-        setError("Failed to delete from server. Deleted locally.")
+        setDeleteType("soft") // Reset to default
+        const errorMessage = deleteType === "hard" 
+          ? "Failed to permanently delete from server. Deleted locally." 
+          : "Failed to deactivate workflow on server."
+        setError(errorMessage)
       } finally {
         setLoading(false)
       }
@@ -513,18 +532,71 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
       )}
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteWorkflowId} onOpenChange={() => setDeleteWorkflowId(null)}>
-        <AlertDialogContent>
+      <AlertDialog 
+        open={!!deleteWorkflowId} 
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteWorkflowId(null)
+            setDeleteType("soft") // Reset to default when closing
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Workflow</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this workflow? This action cannot be undone.
+            <AlertDialogDescription className="space-y-4">
+              <p>Choose how you want to delete this workflow:</p>
+              
+              <RadioGroup value={deleteType} onValueChange={(value) => setDeleteType(value as "soft" | "hard")} className="space-y-3">
+                <div className="flex items-start space-x-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50">
+                  <RadioGroupItem value="soft" id="soft-delete" className="mt-1" />
+                  <div className="flex-1">
+                    <Label htmlFor="soft-delete" className="font-semibold cursor-pointer">
+                      Soft Delete (Recommended)
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Sets the workflow as inactive. The workflow and its data remain in the database and can be reactivated later.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start space-x-3 p-3 rounded-lg border border-red-200 hover:bg-red-50">
+                  <RadioGroupItem value="hard" id="hard-delete" className="mt-1" />
+                  <div className="flex-1">
+                    <Label htmlFor="hard-delete" className="font-semibold text-red-600 cursor-pointer">
+                      Hard Delete (Permanent)
+                    </Label>
+                    <p className="text-sm text-red-600 mt-1">
+                      Permanently removes the workflow and all associated data from the database. This action cannot be undone.
+                    </p>
+                  </div>
+                </div>
+              </RadioGroup>
+
+              {deleteType === "hard" && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm font-semibold text-red-800">⚠️ Warning</p>
+                  <p className="text-sm text-red-700 mt-1">
+                    Hard delete will permanently remove:
+                  </p>
+                  <ul className="text-sm text-red-700 mt-2 list-disc list-inside space-y-1">
+                    <li>The workflow definition</li>
+                    <li>All workflow steps and fields</li>
+                    <li>The associated database table</li>
+                    <li>All data stored in the workflow table</li>
+                  </ul>
+                </div>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
-              Delete
+            <AlertDialogAction 
+              onClick={handleDelete} 
+              className={deleteType === "hard" ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}
+              disabled={loading}
+            >
+              {loading ? "Deleting..." : deleteType === "hard" ? "Permanently Delete" : "Deactivate Workflow"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

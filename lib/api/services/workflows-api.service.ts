@@ -27,8 +27,16 @@ export const workflowsApi = {
     return await apiClient.put<WorkflowApiResponse>(API_ENDPOINTS.workflows.update(workflow_id), data)
   },
 
-  async delete(workflow_id: string): Promise<void> {
-    return await apiClient.delete<void>(API_ENDPOINTS.workflows.delete(workflow_id))
+  async delete(workflow_id: string, hardDelete: boolean = false): Promise<void> {
+    // Send query parameters: hard_delete and soft_delete
+    // FastAPI Query() accepts string values and converts them to booleans
+    const params = {
+      hard_delete: hardDelete,
+      soft_delete: !hardDelete
+    }
+    return await apiClient.delete<void>(API_ENDPOINTS.workflows.delete(workflow_id), {
+      params,
+    })
   },
 }
 

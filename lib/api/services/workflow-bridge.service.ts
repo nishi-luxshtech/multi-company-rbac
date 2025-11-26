@@ -112,11 +112,11 @@ export class WorkflowBridgeService {
               min_value: field.validation?.min,
               max_value: field.validation?.max,
               pattern: field.validation?.pattern,
-              required: field.required,
+                required: field.required,
             }
             if (supportsOptions && field.options?.length) {
               validationPayload.options = field.options
-            }
+              }
             const hasValues = Object.values(validationPayload).some((value) => value !== undefined)
             return hasValues ? validationPayload : undefined
           })(),
@@ -363,10 +363,13 @@ export class WorkflowBridgeService {
 
   /**
    * Delete a workflow
+   * @param id - Workflow ID to delete
+   * @param hardDelete - If true, permanently deletes workflow and table. If false, sets is_active=false (soft delete)
+   * @returns Promise<boolean> - True if deleted successfully
    */
-  static async deleteWorkflow(id: string): Promise<boolean> {
+  static async deleteWorkflow(id: string, hardDelete: boolean = false): Promise<boolean> {
     try {
-      await workflowsApi.delete(id)
+      await workflowsApi.delete(id, hardDelete)
       return true
     } catch (error: any) {
       if (error.status === 404) {
