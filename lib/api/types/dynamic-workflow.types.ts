@@ -295,6 +295,7 @@ export interface StepSubmitResponse {
 
 export interface FrontendWorkflowField {
   id: string
+  name?: string
   type: FieldType
   label: string
   placeholder?: string

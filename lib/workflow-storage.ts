@@ -2,6 +2,7 @@
 
 export interface WorkflowField {
   id: string
+  name?: string
   type:
     | "text"
     | "email"

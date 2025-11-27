@@ -21,6 +21,33 @@ import {
 export class WorkflowBridgeService {
   private static optionEnabledTypes = ["select", "radio", "combobox", "multiselect", "multi_select"]
 
+  private static slugifyFieldName(value?: string, fallback: string = "field"): string {
+    const normalized = (value ?? "").toString().trim().toLowerCase()
+    let slug = normalized.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+    if (!slug) {
+      slug = `${fallback}_${Math.random().toString(36).substring(2, 8)}`
+    }
+    if (/^[0-9]/.test(slug)) {
+      slug = `${fallback}_${slug}`
+    }
+    return slug.slice(0, 60)
+  }
+
+  private static getOrGenerateFieldName(field: FrontendWorkflowField, usedNames: Set<string>): string {
+    const source = field.name || field.label || field.id
+    let base = WorkflowBridgeService.slugifyFieldName(source, "field")
+    if (!base) {
+      base = WorkflowBridgeService.slugifyFieldName(field.id, "field")
+    }
+    let candidate = base
+    let counter = 2
+    while (usedNames.has(candidate)) {
+      candidate = `${base}_${counter++}`
+    }
+    usedNames.add(candidate)
+    return candidate
+  }
+
   private static fieldSupportsOptions(fieldType?: string) {
     if (!fieldType) return false
     const normalized = fieldType.replace("-", "_").toLowerCase()
@@ -38,6 +65,7 @@ export class WorkflowBridgeService {
       fields: apiStep.fields.map((apiField) => {
         const field: FrontendWorkflowField = {
           id: apiField.id,
+          name: apiField.name || (apiField as any).field_name || apiField.id,
           type: apiField.type,
           label: apiField.label,
           placeholder: apiField.placeholder,
@@ -90,6 +118,7 @@ export class WorkflowBridgeService {
   static mapFrontendToApi(
     workflow: Omit<FrontendWorkflow, "id" | "createdAt" | "updatedAt">
   ): DynamicWorkflowCreate {
+    const usedFieldNames = new Set<string>()
     return {
       name: workflow.name,
       description: workflow.description,
@@ -100,7 +129,7 @@ export class WorkflowBridgeService {
         order: step.order,
         description: step.description,
         fields: step.fields.map((field) => ({
-          name: field.id,
+          name: WorkflowBridgeService.getOrGenerateFieldName(field, usedFieldNames),
           label: field.label,
           type: field.type,
           order: 1, // Default order
@@ -159,6 +188,7 @@ export class WorkflowBridgeService {
                 : undefined
               return {
                 id: f.id,
+                name: f.name || (f as any).field_name || f.id,
                 label: f.label,
                 type: f.type as any,
                 required: f.required,
@@ -219,6 +249,7 @@ export class WorkflowBridgeService {
               const fieldOrder = (f as any).field_order ?? (f as any).order ?? (index + 1)
               return {
                 id: (f as any).id,
+                name: (f as any).field_name ?? (f as any).name ?? (f as any).id,
                 label: (f as any).label ?? (f as any).field_label ?? (f as any).field_name ?? "",
                 type: ((f as any).type ?? (f as any).field_type ?? "text") as any,
                 required: (f as any).required ?? (f as any).is_required ?? false,
@@ -275,6 +306,7 @@ export class WorkflowBridgeService {
       if (updates.description !== undefined) payload.description = updates.description
       if (updates.isActive !== undefined) payload.is_active = updates.isActive
       if (updates.steps !== undefined) {
+        const usedFieldNames = new Set<string>()
         payload.steps = updates.steps.map((step) => ({
           name: step.name,
           description: step.description,
@@ -286,8 +318,9 @@ export class WorkflowBridgeService {
             const backendType = t === "multiselect" ? "multi_select" : t
             const sequentialOrder = fieldIndex + 1
             const supportsOptions = WorkflowBridgeService.fieldSupportsOptions(field.type)
+            const fieldName = WorkflowBridgeService.getOrGenerateFieldName(field, usedFieldNames)
             return {
-              field_name: field.id,
+              field_name: fieldName,
               field_label: field.label,
               field_type: backendType,
               field_order: sequentialOrder, // Sequential order: 1, 2, 3... based on array position

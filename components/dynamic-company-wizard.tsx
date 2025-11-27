@@ -1300,30 +1300,34 @@ export function DynamicCompanyWizard({
       }
 
       // Map all form data to field names
-      // The API expects UUID field IDs (field.id) as keys, not snake_case
-      // Only send UUID keys to avoid duplicates and ensure proper mapping
       workflow.steps.forEach((step) => {
         step.fields.forEach((field) => {
           const value = formData[field.id]
           if (value !== undefined && value !== null && value !== "") {
-            // Use field.id (UUID) as the key - this matches the workflow_fields keys in backend
-            if (field.id) {
-              completeData[field.id] = value
-            }
-            
-            // Also include snake_case version for common fields like company_name, company_code
-            // These are special fields that the backend expects in snake_case
             const labelKey =
               field.label
                 ?.toLowerCase()
                 .replace(/[^a-z0-9]+/g, "_")
                 .replace(/^_+|_+$/g, "") || ""
-            
-            // Only add snake_case for known common fields to avoid duplicates
-            const commonFields = ["company_name", "company_code", "country", "association_number"]
-            if (commonFields.includes(labelKey)) {
-              completeData[labelKey] = value
-            }
+            const normalizedFieldName =
+              (field.name
+                ? field.name
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, "_")
+                    .replace(/^_+|_+$/g, "")
+                : "") || labelKey
+
+            const keysInPriority = Array.from(
+              new Set(
+                [normalizedFieldName, labelKey, field.id].filter(
+                  (key): key is string => Boolean(key && key.length)
+                )
+              )
+            )
+
+            keysInPriority.forEach((key) => {
+              completeData[key] = value
+            })
           }
         })
       })
