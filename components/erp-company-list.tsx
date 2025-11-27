@@ -163,6 +163,55 @@ const formatRecordValue = (value: any): string => {
   return String(value)
 }
 
+// Helper function to get field value from record, checking both UUID key and snake_case key
+const getFieldValue = (record: MasterRecord, fieldId: string, workflows?: FrontendWorkflow[]): any => {
+  // First try UUID key (direct match)
+  if (record[fieldId] !== undefined && record[fieldId] !== null) {
+    return record[fieldId]
+  }
+  
+  // If not found, try to find the field label and check snake_case version
+  if (workflows) {
+    for (const workflow of workflows) {
+      for (const step of workflow.steps || []) {
+        for (const field of step.fields || []) {
+          if (field.id === fieldId) {
+            // Convert label to snake_case
+            const snakeCaseKey = field.label
+              ?.toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "") || ""
+            
+            if (snakeCaseKey && record[snakeCaseKey] !== undefined && record[snakeCaseKey] !== null) {
+              return record[snakeCaseKey]
+            }
+            break
+          }
+        }
+      }
+    }
+  }
+  
+  // Fallback: try common snake_case field names
+  const commonFields: Record<string, string[]> = {
+    "company_name": ["company_name"],
+    "company_code": ["company_code"],
+    "country": ["country"],
+    "form_of_business": ["form_of_business"],
+    "association_number": ["association_number"],
+    "default_language": ["default_language"],
+    "company_creation_date": ["company_creation_date"],
+  }
+  
+  for (const [key, aliases] of Object.entries(commonFields)) {
+    if (aliases.some(alias => record[alias] !== undefined && record[alias] !== null)) {
+      return record[aliases.find(alias => record[alias] !== undefined && record[alias] !== null)!]
+    }
+  }
+  
+  return undefined
+}
+
 export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyListProps) {
   const { toast } = useToast()
   const [masterRecords, setMasterRecords] = useState<MasterRecord[]>([])
@@ -624,14 +673,16 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
             const fieldsToRender =
               (workflowMeta?.displayFields?.length ? workflowMeta.displayFields : DEFAULT_DISPLAY_FIELDS).slice(0, 3)
             const fallbackTitle = workflowMeta?.primaryField
-              ? formatRecordValue(record[workflowMeta.primaryField.fieldId])
+              ? formatRecordValue(getFieldValue(record, workflowMeta.primaryField.fieldId, availableWorkflows))
               : undefined
-            const cardTitle = record.company_name?.trim()
-              ? record.company_name
+            const companyName = getFieldValue(record, "company_name", availableWorkflows) || record.company_name
+            const companyCode = getFieldValue(record, "company_code", availableWorkflows) || record.company_code
+            const cardTitle = companyName && String(companyName).trim()
+              ? String(companyName).trim()
               : fallbackTitle && fallbackTitle !== "N/A"
                 ? fallbackTitle
                 : "N/A"
-            const cardSubtitle = record.company_code?.trim() ? record.company_code : formatRecordValue(record.id)
+            const cardSubtitle = companyCode && String(companyCode).trim() ? String(companyCode).trim() : formatRecordValue(record.id)
 
             return (
               <Card key={`master-${record.workflow_id}-${record.id}-${index}`} className="hover-lift">
@@ -665,14 +716,17 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                   </div>
 
                   <div className="space-y-2 text-sm">
-                    {fieldsToRender.map((field) => (
-                      <div className="flex justify-between" key={`${record.workflow_id}-${field.fieldId}`}>
-                        <span className="text-muted-foreground">{field.label}:</span>
-                        <span className="font-medium truncate ml-2">
-                          {formatRecordValue(record[field.fieldId])}
-                        </span>
-                      </div>
-                    ))}
+                    {fieldsToRender.map((field) => {
+                      const fieldValue = getFieldValue(record, field.fieldId, availableWorkflows)
+                      return (
+                        <div className="flex justify-between" key={`${record.workflow_id}-${field.fieldId}`}>
+                          <span className="text-muted-foreground">{field.label}:</span>
+                          <span className="font-medium truncate ml-2">
+                            {formatRecordValue(fieldValue)}
+                          </span>
+                        </div>
+                      )
+                    })}
                     {record.workflow_name && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Workflow:</span>
