@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { WorkflowConnector } from "./workflow-connector"
 import { WorkflowCanvasBuilder } from "./workflow-canvas-builder"
+import { WorkflowRelationshipBuilder } from "./workflow-relationship-builder"
 
 interface WorkflowManagementProps {
   onCreateWorkflow: () => void
@@ -31,6 +32,7 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
   const [deleteWorkflowId, setDeleteWorkflowId] = useState<string | null>(null)
   const [connectingWorkflowId, setConnectingWorkflowId] = useState<string | null>(null)
   const [showCanvasBuilder, setShowCanvasBuilder] = useState(false)
+  const [relationshipBuilderWorkflowId, setRelationshipBuilderWorkflowId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -272,6 +274,18 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
     )
   }
 
+  if (relationshipBuilderWorkflowId) {
+    return (
+      <WorkflowRelationshipBuilder
+        workflowId={relationshipBuilderWorkflowId}
+        onClose={() => {
+          setRelationshipBuilderWorkflowId(null)
+          loadWorkflows()
+        }}
+      />
+    )
+  }
+
   if (showCanvasBuilder) {
     return (
       <div className="h-screen flex flex-col">
@@ -420,6 +434,15 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
                 <Button variant="outline" size="sm" onClick={() => onEditWorkflow(workflow)} className="flex-1">
                   <Edit className="mr-1 h-4 w-4" />
                   Edit
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setRelationshipBuilderWorkflowId(workflow.id)}
+                  className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300"
+                  title="Configure step relationships"
+                >
+                  <Network className="h-4 w-4" />
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => setConnectingWorkflowId(workflow.id)}>
                   <Link2 className="h-4 w-4" />
