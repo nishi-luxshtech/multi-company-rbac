@@ -1204,63 +1204,195 @@ export function DynamicCompanyWizard({
   }
 
   const validateStep = () => {
+    // Frontend validation only - no API calls
     const newErrors = validateStepUtil(
       currentStepData.fields || [],
       formData
     )
+    // Only set frontend validation errors, don't touch API errors here
+    // API errors will only be set after final submit
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
-  const handleStepSubmit = () => {
-    // Only use frontend validation for each step
-    const isValid = validateStep()
-    
-    if (!isValid) {
+  const handleStepSubmit = async () => {
+    // 1) Frontend validation first (cheap, instant)
+    const isFrontendValid = validateStep()
+    if (!isFrontendValid) {
       toast({
         title: "Validation Error",
-        description: "Please fix the errors before proceeding.",
+        description: "Please fix the highlighted fields before validating with the server.",
         variant: "destructive",
       })
       return
     }
 
-    // Mark step as validated (frontend validation only)
-    setValidatedSteps((prev) => new Set(prev).add(currentStep))
-    setCompletedSteps((prev) => new Set(prev).add(currentStep))
-    
-    // Clear API validation errors for this step if user fixes them
-    const stepFields = currentStepData.fields || []
-    const updatedApiErrors = { ...apiValidationErrors }
-    const updatedErrorFields = new Set(apiValidationErrorFields)
-    let hasChanges = false
+    // 2) Backend (API) validation for THIS STEP only
+    setIsValidating(true)
 
-    stepFields.forEach((field) => {
-      if (updatedApiErrors[field.id]) {
-        delete updatedApiErrors[field.id]
-        updatedErrorFields.delete(field.id)
-        hasChanges = true
+    try {
+      // Build step-level payload: only current step's fields + company_id
+      const stepData: Record<string, any> = {
+        company_id: currentCompany?.id ? parseInt(currentCompany.id) : companyId || 1,
       }
-    })
 
-    if (hasChanges) {
-      setApiValidationErrors(updatedApiErrors)
-      setApiValidationErrorFields(updatedErrorFields)
+      const stepFieldMap: Record<string, string> = {} // fieldId -> fieldName
+
+      currentStepData.fields.forEach((field) => {
+        const value = formData[field.id]
+
+        const hasValue = value !== undefined && value !== null && value !== ""
+        if (!hasValue) return
+
+        // Use a readable snake_case key derived from the label.
+        // Example: "Company Name" -> "company_name"
+        const labelKey =
+          field.label
+            ?.toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "") || ""
+
+        if (labelKey) {
+          stepData[labelKey] = value
+          stepFieldMap[field.id] = labelKey
+        } else {
+          // Fallback: if label is missing for some reason, use field.id (rare)
+          stepData[field.id] = value
+          stepFieldMap[field.id] = field.id
+        }
+      })
+
+      console.log(`🔍 Step ${currentStep + 1} API validation payload:`, {
+        stepName: currentStepData.name,
+        stepIndex: currentStep,
+        payload: stepData,
+      })
+
+      // IMPORTANT: use isUpdate=true so other steps' required fields are ignored
+      const stepValidation = await dynamicWorkflowAPI.validateTableData(
+        workflowId,
+        stepData,
+        true
+      )
+
+      console.log(`📥 Step ${currentStep + 1} API Validation Response:`, {
+        isValid: stepValidation.is_valid,
+        totalErrors: stepValidation.errors.length,
+        errors: stepValidation.errors.map((e) => ({
+          field_name: e.field_name,
+          field_label: e.field_label,
+          error_message: e.error_message,
+        })),
+      })
+
+      if (!stepValidation.is_valid) {
+        // Map ONLY this step's API errors back to its fields
+        const stepApiErrors: Record<string, string> = {}
+        const stepErrorFieldIds = new Set<string>()
+        const stepErrorMessages: string[] = []
+
+        stepValidation.errors.forEach((error) => {
+          const errorFieldNameNorm = error.field_name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "")
+
+          currentStepData.fields.forEach((field) => {
+            const fieldName = (field as any).name
+            const fieldLabel = field.label || ""
+            const fieldNameNorm = (fieldName || "")
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "")
+            const fieldLabelNorm = fieldLabel
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "")
+
+            // Match by field.name, snake_case(field.label), or direct ID/label
+            const matches =
+              error.field_name === fieldName ||
+              errorFieldNameNorm === fieldNameNorm ||
+              errorFieldNameNorm === fieldLabelNorm ||
+              error.field_name === field.id ||
+              error.field_label === field.label
+
+            if (matches) {
+              stepApiErrors[field.id] = error.error_message
+              stepErrorFieldIds.add(field.id)
+              stepErrorMessages.push(`${field.label || field.id}: ${error.error_message}`)
+            }
+          })
+        })
+
+        // Merge step errors into global API error state
+        setApiValidationErrors((prev) => ({ ...prev, ...stepApiErrors }))
+        setApiValidationErrorFields((prev) => {
+          const updated = new Set(prev)
+          stepErrorFieldIds.forEach((id) => updated.add(id))
+          return updated
+        })
+        setStepValidationErrors((prev) => ({
+          ...prev,
+          [currentStep]: stepErrorMessages,
+        }))
+        setErrors((prev) => ({ ...prev, ...stepApiErrors }))
+
+        toast({
+          title: "Step Validation Failed",
+          description: `This step has ${stepValidation.errors.length} server-side validation error(s). Please fix them before continuing.`,
+          variant: "destructive",
+        })
+
+        return
+      }
+
+      // 3) If API validation passed for this step, clear its API errors and mark as validated
+      const thisStepFieldIds = currentStepData.fields.map((f) => f.id)
+
+      setApiValidationErrors((prev) => {
+        const updated = { ...prev }
+        thisStepFieldIds.forEach((id) => delete updated[id])
+        return updated
+      })
+
+      setApiValidationErrorFields((prev) => {
+        const updated = new Set(prev)
+        thisStepFieldIds.forEach((id) => updated.delete(id))
+        return updated
+      })
+
+      setStepValidationErrors((prev) => {
+        const updated = { ...prev }
+        delete updated[currentStep]
+        return updated
+      })
+
+      setValidatedSteps((prev) => new Set(prev).add(currentStep))
+      setCompletedSteps((prev) => new Set(prev).add(currentStep))
+
+      console.log(`✅ Step ${currentStep + 1} validated (frontend + API):`, currentStepData.name)
+
+      toast({
+        title: "Step Validated",
+        description: `${currentStepData.name} has passed both frontend and API validation.`,
+        variant: "default",
+      })
+
+      // Move to next step if not last step
+      if (currentStep < workflow.steps.length - 1) {
+        setCurrentStep(currentStep + 1)
+      }
+    } catch (error: any) {
+      console.error("Step API validation error:", error)
+      toast({
+        title: "Validation Error",
+        description: error.message || "Failed to validate this step with the server. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsValidating(false)
     }
-
-    // Clear step validation errors if fixed
-    setStepValidationErrors((prev) => {
-      const newErrors = { ...prev }
-      delete newErrors[currentStep]
-      return newErrors
-    })
-
-    console.log(`Step ${currentStep + 1} validated (frontend):`, currentStepData.name)
-
-    toast({
-      title: "Step Validated",
-      description: `${currentStepData.name} has been validated and is ready for submission.`,
-    })
   }
 
   const handleNext = () => {
@@ -1289,9 +1421,14 @@ export function DynamicCompanyWizard({
       return
     }
 
-    // Final validation with API using all form data before submitting
+    // NOW call API validation - this is the ONLY place API validation happens
     setIsSubmitting(true)
     setIsValidating(true)
+    
+    // Clear any previous API validation errors before new validation
+    setApiValidationErrors({})
+    setApiValidationErrorFields(new Set())
+    setStepValidationErrors({})
     
     try {
       // Prepare complete data for validation
@@ -1300,15 +1437,33 @@ export function DynamicCompanyWizard({
       }
 
       // Map all form data to field names
+<<<<<<< Updated upstream
       workflow.steps.forEach((step) => {
         step.fields.forEach((field) => {
           const value = formData[field.id]
           if (value !== undefined && value !== null && value !== "") {
+=======
+      // The API expects field_name (actual column names like "company_name", "address_line_1") as keys
+      // NOT UUIDs (field.id). The field.name property contains the field_name from the backend.
+      const fieldMapping: Record<string, { fieldId: string; fieldName: string; value: any; label: string }> = {}
+      
+      workflow.steps.forEach((step) => {
+        step.fields.forEach((field) => {
+          const value = formData[field.id]
+          
+          // Check if value exists (including false for checkboxes, 0 for numbers)
+          // Only exclude: undefined, null, and empty strings
+          const hasValue = value !== undefined && value !== null && value !== ""
+          
+          if (hasValue) {
+            // Use a readable snake_case key derived from the label as the primary key.
+>>>>>>> Stashed changes
             const labelKey =
               field.label
                 ?.toLowerCase()
                 .replace(/[^a-z0-9]+/g, "_")
                 .replace(/^_+|_+$/g, "") || ""
+<<<<<<< Updated upstream
             const normalizedFieldName =
               (field.name
                 ? field.name
@@ -1327,18 +1482,100 @@ export function DynamicCompanyWizard({
 
             keysInPriority.forEach((key) => {
               completeData[key] = value
+=======
+
+            const payloadKey = labelKey || field.id
+
+            completeData[payloadKey] = value
+            fieldMapping[payloadKey] = {
+              fieldId: field.id,
+              fieldName: labelKey || 'N/A',
+              value: value,
+              label: field.label
+            }
+          } else if (field.required) {
+            // Log missing required fields for debugging - check if it's in formData but empty
+            const formDataValue = formData[field.id]
+            console.warn(`⚠️ Required field "${field.label}" is missing value:`, {
+              value: formDataValue,
+              type: typeof formDataValue,
+              isEmpty: formDataValue === "",
+              isNull: formDataValue === null,
+              isUndefined: formDataValue === undefined,
+              fieldId: field.id,
+              formDataKey: field.id,
+              hasValueInFormData: formData[field.id] !== undefined,
+              allFormDataKeys: Object.keys(formData).filter(k => 
+                k.toLowerCase().includes(field.label.toLowerCase().substring(0, 5)) ||
+                field.label.toLowerCase().includes(k.toLowerCase().substring(0, 5))
+              )
+>>>>>>> Stashed changes
             })
           }
         })
       })
+      
+      // Log field mappings for debugging
+      console.log("🔍 Field Value Mapping:", {
+        totalMapped: Object.keys(fieldMapping).length,
+        mappings: Object.entries(fieldMapping).slice(0, 10).map(([key, info]) => ({
+          payloadKey: key,
+          fieldLabel: info.label,
+          value: info.value,
+          sourceFieldId: info.fieldId
+        }))
+      })
+
+      // Log payload structure to verify field names are used (not UUIDs)
+      const payloadKeys = Object.keys(completeData).filter(k => k !== "company_id")
+      const uuidKeys = payloadKeys.filter(k => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k))
+      const fieldNameKeys = payloadKeys.filter(k => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k))
+      
+      // Check for "Accepted Payment Methods" field specifically
+      const paymentMethodsKey = payloadKeys.find(k => 
+        k.toLowerCase().includes('payment') && 
+        (k.toLowerCase().includes('method') || k.toLowerCase().includes('accepted'))
+      )
+      
+      console.log("📦 Payload Structure:", {
+        totalFields: payloadKeys.length,
+        fieldNameKeys: fieldNameKeys.length,
+        uuidKeys: uuidKeys.length,
+        sampleFieldNames: fieldNameKeys.slice(0, 10),
+        sampleUuidKeys: uuidKeys.slice(0, 3),
+        paymentMethodsField: paymentMethodsKey ? {
+          key: paymentMethodsKey,
+          value: completeData[paymentMethodsKey]
+        } : "NOT FOUND in payload",
+        warning: uuidKeys.length > 0 ? "⚠️ Some fields still using UUIDs - check field.name mapping" : "✅ All fields using field names"
+      })
+      
+      // Log full payload for debugging (truncated)
+      console.log("📋 Full Payload (first 20 fields):", 
+        Object.entries(completeData).slice(0, 20).reduce((acc, [key, value]) => {
+          acc[key] = value
+          return acc
+        }, {} as Record<string, any>)
+      )
 
       // Validate all data with API before submitting
-      console.log("Validating all data with API before submission...")
+      console.log("🔍 Validating all data with API before submission...")
+      console.log("📤 Sending payload with", Object.keys(completeData).length, "fields")
       const finalValidation = await dynamicWorkflowAPI.validateTableData(
         workflowId,
         completeData,
         Boolean(recordId)
       )
+      
+      console.log("📥 API Validation Response:", {
+        isValid: finalValidation.is_valid,
+        totalErrors: finalValidation.errors.length,
+        errors: finalValidation.errors.map(e => ({
+          field_name: e.field_name,
+          field_label: e.field_label,
+          error_message: e.error_message
+        }))
+      })
 
       if (!finalValidation.is_valid) {
         // Map API validation errors to form fields
@@ -1356,28 +1593,31 @@ export function DynamicCompanyWizard({
           // Search through all workflow steps to find matching field
           workflow.steps.forEach((step, stepIndex) => {
             step.fields.forEach((field) => {
-              // Try multiple matching strategies
+              const fieldName = (field as any).name // The actual field_name from backend
               const fieldLabelSnake = field.label
                 ?.toLowerCase()
                 .replace(/[^a-z0-9]+/g, "_")
                 .replace(/^_+|_+$/g, "") || ""
-              const fieldNameSnake = field.id
-                .toLowerCase()
+              const fieldNameSnake = fieldName
+                ?.toLowerCase()
                 .replace(/[^a-z0-9]+/g, "_")
-                .replace(/^_+|_+$/g, "")
+                .replace(/^_+|_+$/g, "") || ""
               
-              // Match by:
-              // 1. Field name (snake_case of label) - most common
-              // 2. Field ID (if it matches)
-              // 3. Exact label match
-              // 4. Field name from API matches field label
-              if (
-                errorFieldName === fieldLabelSnake ||
-                errorFieldName === fieldNameSnake ||
-                error.field_name === field.id ||
-                error.field_label === field.label ||
-                error.field_name.toLowerCase() === field.label?.toLowerCase()
-              ) {
+              // Match by priority:
+              // 1. Direct field.name match (most reliable - exact field_name from backend)
+              // 2. Normalized field.name match (snake_case comparison)
+              // 3. Field label (snake_case of label)
+              // 4. Field ID (UUID) - fallback
+              // 5. Exact label match
+              const matches = 
+                error.field_name === fieldName || // Exact match with field.name
+                errorFieldName === fieldNameSnake || // Normalized match with field.name
+                errorFieldName === fieldLabelSnake || // Match with label
+                error.field_name === field.id || // Match with UUID (fallback)
+                error.field_label === field.label || // Exact label match
+                error.field_name.toLowerCase() === field.label?.toLowerCase() // Case-insensitive label match
+              
+              if (matches) {
                 apiErrors[field.id] = error.error_message
                 errorFieldIds.add(field.id)
                 
@@ -1491,6 +1731,8 @@ export function DynamicCompanyWizard({
 
   const renderField = (field: WorkflowField) => {
     const value = formData[field.id]
+    // Frontend validation errors show during step validation
+    // API validation errors only show after final submit fails
     const error = errors[field.id] || apiValidationErrors[field.id]
     const hasApiError = apiValidationErrorFields.has(field.id)
 
@@ -1567,26 +1809,7 @@ export function DynamicCompanyWizard({
             hasOptions: field.options && field.options.length > 0
           })
           
-          // CRITICAL DEBUG: If value is empty, check if it should have a value
-          if (!value || value === "") {
-            console.error(`❌ CRITICAL: Country Select has EMPTY value!`)
-            console.error(`   Field ID: ${field.id}`)
-            console.error(`   FormData for this field:`, formData[field.id])
-            console.error(`   All formData keys:`, Object.keys(formData))
-            console.error(`   Checking if value exists with different key...`)
-            
-            // Try to find the value in formData with different keys
-            const possibleKeys = Object.keys(formData).filter(k => 
-              k.toLowerCase().includes("country") || 
-              k.toLowerCase().includes(field.id.toLowerCase())
-            )
-            if (possibleKeys.length > 0) {
-              console.error(`   Found possible keys:`, possibleKeys)
-              possibleKeys.forEach(key => {
-                console.error(`   - formData["${key}"] =`, formData[key])
-              })
-            }
-          }
+          // Note: Empty values are normal for unfilled fields and will be filtered out in payload building
         }
         
         if (selectValue && field.options && field.options.length > 0) {

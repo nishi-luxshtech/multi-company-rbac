@@ -295,7 +295,11 @@ export interface StepSubmitResponse {
 
 export interface FrontendWorkflowField {
   id: string
+<<<<<<< Updated upstream
   name?: string
+=======
+  name?: string // Field name (field_name from backend) - used as column name in payload
+>>>>>>> Stashed changes
   type: FieldType
   label: string
   placeholder?: string
