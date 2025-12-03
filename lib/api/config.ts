@@ -4,7 +4,7 @@
  */
 
 export const API_CONFIG = {
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "https://erp-r-1.onrender.com",
+  baseURL: (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000").trim(),
   apiVersion: process.env.NEXT_PUBLIC_API_VERSION || "v1",
   timeout: 30000, // 30 seconds
 } as const
@@ -57,18 +57,22 @@ export const API_ENDPOINTS = {
 } as const
 
 export const getFullUrl = (endpoint: string): string => {
+  // Normalize baseURL (remove trailing slashes)
+  const baseURL = API_CONFIG.baseURL.trim().replace(/\/+$/, "")
+  
   // Remove leading slash if present
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint
+  
   // If endpoint already includes /api/v1, use it as-is
   // Otherwise, check if it's a workflow builder endpoint (starts with workflows/builder)
   // Workflow builder endpoints don't need /api/v1 prefix
   if (cleanEndpoint.startsWith("api/")) {
-    return `${API_CONFIG.baseURL}/${cleanEndpoint}`
+    return `${baseURL}/${cleanEndpoint}`
   }
   // Workflow builder endpoints are at root level
   if (cleanEndpoint.startsWith("workflows/builder")) {
-    return `${API_CONFIG.baseURL}/${cleanEndpoint}`
+    return `${baseURL}/${cleanEndpoint}`
   }
   // Other endpoints need /api/v1 prefix
-  return `${API_CONFIG.baseURL}/api/${API_CONFIG.apiVersion}/${cleanEndpoint}`
+  return `${baseURL}/api/${API_CONFIG.apiVersion}/${cleanEndpoint}`
 }

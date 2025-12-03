@@ -55,8 +55,11 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
     setLoading(true)
     setError(null)
     try {
+      console.log("[WorkflowManagement] Starting to load workflows...")
+      
       // Try to load from dynamic workflow API first
       const dynamicWorkflows = await WorkflowBridgeService.getAllWorkflows()
+      console.log(`[WorkflowManagement] Received ${dynamicWorkflows?.length || 0} workflows from API`)
       
       if (dynamicWorkflows && dynamicWorkflows.length > 0) {
         // Convert dynamic workflows to frontend format
@@ -92,6 +95,7 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
         console.log(`✓ Loaded ${convertedWorkflows.length} workflows from server`)
       } else {
         // No workflows from API, try localStorage
+        console.log("[WorkflowManagement] No workflows from API, checking localStorage...")
         const allWorkflows = workflowStorage.getAll()
         if (allWorkflows.length > 0) {
           setWorkflows(allWorkflows)
@@ -102,12 +106,33 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
         }
       }
     } catch (err: any) {
-      console.error("Failed to load workflows from API:", err)
-      console.error("Error details:", {
+      console.error("[WorkflowManagement] Failed to load workflows from API:", err)
+      console.error("[WorkflowManagement] Error details:", {
         message: err.message,
         status: err.status,
-        response: err.response?.data,
+        statusCode: err.response?.status,
+        statusText: err.response?.statusText,
+        responseData: err.response?.data,
+        url: err.config?.url,
+        baseURL: err.config?.baseURL,
       })
+      
+      // Handle network errors
+      if (err.code === "ECONNREFUSED" || err.code === "ERR_NETWORK" || err.message?.includes("Network Error")) {
+        const errorMsg = "Cannot connect to backend server. Please check if the server is running."
+        setError(errorMsg)
+        console.error("[WorkflowManagement] Network error - backend server may be down")
+        
+        // Fallback to localStorage
+        const allWorkflows = workflowStorage.getAll()
+        if (allWorkflows.length > 0) {
+          setWorkflows(allWorkflows)
+          setError(`${errorMsg} Using local data.`)
+        } else {
+          setWorkflows([])
+        }
+        return
+      }
       
       // Handle authentication errors
       if (err.response?.status === 401 || err.response?.status === 403) {
@@ -126,22 +151,34 @@ export function WorkflowManagement({ onCreateWorkflow, onEditWorkflow }: Workflo
         } else {
           setError(`Failed to load workflows: ${errorDetail}`)
         }
+      } else if (err.response?.status === 404) {
+        // 404 might mean endpoint doesn't exist or workflows endpoint changed
+        console.warn("[WorkflowManagement] 404 error - endpoint may not exist")
+        setError("Workflows endpoint not found. Please check backend configuration.")
+        
+        // Fallback to localStorage
+        const allWorkflows = workflowStorage.getAll()
+        if (allWorkflows.length > 0) {
+          setWorkflows(allWorkflows)
+          setError("Workflows endpoint not found. Using local data.")
+        } else {
+          setWorkflows([])
+        }
       } else {
-        setError(`Failed to load workflows from server: ${err.message || "Unknown error"}. Using local data.`)
-      }
-      
-      // Fallback to localStorage on error
-      const allWorkflows = workflowStorage.getAll()
-      if (allWorkflows.length > 0) {
-        setWorkflows(allWorkflows)
-        // Only show error if we have localStorage data as fallback
-        const errorMessage = err.response?.data?.detail || err.message || "Unknown error"
-        setError(`Failed to load workflows from server: ${errorMessage}. Using local data.`)
-      } else {
-        // No localStorage data either - show the actual error
-        const errorMessage = err.response?.data?.detail || err.message || "Failed to load workflows"
-        setError(`Failed to load workflows: ${errorMessage}`)
-        setWorkflows([])
+        // Other errors
+        const errorMessage = err.response?.data?.detail || err.response?.data?.message || err.message || "Unknown error"
+        setError(`Failed to load workflows from server: ${errorMessage}`)
+        
+        // Fallback to localStorage on error
+        const allWorkflows = workflowStorage.getAll()
+        if (allWorkflows.length > 0) {
+          setWorkflows(allWorkflows)
+          setError(`Failed to load workflows from server: ${errorMessage}. Using local data.`)
+        } else {
+          // No localStorage data either - show the actual error
+          setError(`Failed to load workflows: ${errorMessage}`)
+          setWorkflows([])
+        }
       }
     } finally {
       setLoading(false)

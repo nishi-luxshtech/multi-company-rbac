@@ -17,14 +17,18 @@ export class ApiClient {
   private client: AxiosInstance
 
   constructor() {
+    // Normalize baseURL - remove trailing slashes and spaces
+    const normalizedBaseURL = API_CONFIG.baseURL.trim().replace(/\/+$/, "")
+    
     this.client = axios.create({
-      baseURL: API_CONFIG.baseURL,
+      baseURL: normalizedBaseURL,
       timeout: API_CONFIG.timeout,
       headers: {
         "Content-Type": "application/json",
       },
     })
 
+    console.log("[ApiClient] Initialized with baseURL:", normalizedBaseURL)
     this.setupInterceptors()
   }
 
