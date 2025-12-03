@@ -65,11 +65,7 @@ export class WorkflowBridgeService {
       fields: apiStep.fields.map((apiField) => {
         const field: FrontendWorkflowField = {
           id: apiField.id,
-<<<<<<< Updated upstream
-          name: apiField.name || (apiField as any).field_name || apiField.id,
-=======
-          name: apiField.name, // Preserve field name (field_name from backend)
->>>>>>> Stashed changes
+          name: apiField.name || (apiField as any).field_name || apiField.id, // Preserve field name (field_name from backend) with fallbacks
           type: apiField.type,
           label: apiField.label,
           placeholder: apiField.placeholder,
@@ -192,11 +188,7 @@ export class WorkflowBridgeService {
                 : undefined
               return {
                 id: f.id,
-<<<<<<< Updated upstream
-                name: f.name || (f as any).field_name || f.id,
-=======
-                name: f.name, // Preserve field name (field_name from backend)
->>>>>>> Stashed changes
+                name: f.name || (f as any).field_name || f.id, // Preserve field name (field_name from backend) with fallbacks
                 label: f.label,
                 type: f.type as any,
                 required: f.required,
@@ -257,11 +249,7 @@ export class WorkflowBridgeService {
               const fieldOrder = (f as any).field_order ?? (f as any).order ?? (index + 1)
               return {
                 id: (f as any).id,
-<<<<<<< Updated upstream
-                name: (f as any).field_name ?? (f as any).name ?? (f as any).id,
-=======
-                name: (f as any).name ?? (f as any).field_name ?? undefined, // Preserve field name (field_name from backend)
->>>>>>> Stashed changes
+                name: (f as any).name ?? (f as any).field_name ?? (f as any).id, // Preserve field name (field_name from backend) with fallbacks
                 label: (f as any).label ?? (f as any).field_label ?? (f as any).field_name ?? "",
                 type: ((f as any).type ?? (f as any).field_type ?? "text") as any,
                 required: (f as any).required ?? (f as any).is_required ?? false,

@@ -1437,12 +1437,6 @@ export function DynamicCompanyWizard({
       }
 
       // Map all form data to field names
-<<<<<<< Updated upstream
-      workflow.steps.forEach((step) => {
-        step.fields.forEach((field) => {
-          const value = formData[field.id]
-          if (value !== undefined && value !== null && value !== "") {
-=======
       // The API expects field_name (actual column names like "company_name", "address_line_1") as keys
       // NOT UUIDs (field.id). The field.name property contains the field_name from the backend.
       const fieldMapping: Record<string, { fieldId: string; fieldName: string; value: any; label: string }> = {}
@@ -1457,32 +1451,11 @@ export function DynamicCompanyWizard({
           
           if (hasValue) {
             // Use a readable snake_case key derived from the label as the primary key.
->>>>>>> Stashed changes
             const labelKey =
               field.label
                 ?.toLowerCase()
                 .replace(/[^a-z0-9]+/g, "_")
                 .replace(/^_+|_+$/g, "") || ""
-<<<<<<< Updated upstream
-            const normalizedFieldName =
-              (field.name
-                ? field.name
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, "_")
-                    .replace(/^_+|_+$/g, "")
-                : "") || labelKey
-
-            const keysInPriority = Array.from(
-              new Set(
-                [normalizedFieldName, labelKey, field.id].filter(
-                  (key): key is string => Boolean(key && key.length)
-                )
-              )
-            )
-
-            keysInPriority.forEach((key) => {
-              completeData[key] = value
-=======
 
             const payloadKey = labelKey || field.id
 
@@ -1509,7 +1482,6 @@ export function DynamicCompanyWizard({
                 k.toLowerCase().includes(field.label.toLowerCase().substring(0, 5)) ||
                 field.label.toLowerCase().includes(k.toLowerCase().substring(0, 5))
               )
->>>>>>> Stashed changes
             })
           }
         })
