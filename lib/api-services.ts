@@ -6,6 +6,8 @@
 
 import { apiClient } from "./api/http-client"
 import { API_CONFIG } from "./api/config"
+import { dynamicWorkflowAPI } from "./api/services/dynamic-workflow-api.service"
+import type { AllMasterTableDataResponse } from "./api/types/dynamic-workflow.types"
 
 // ===== Types =====
 
@@ -108,19 +110,119 @@ export const authAPI = {
 export const companyAPI = {
   /**
    * Get all companies
+   * Now uses workflow-based endpoint: /workflows/builder/table-data/all
+   * Transforms the response to match the expected CompanyListResponse format
    */
   async getAllCompanies(
     limit: number = 100,
     offset: number = 0,
     fullData: boolean = true
   ): Promise<CompanyListResponse> {
-    return await apiClient.get<CompanyListResponse>("/api/companies", {
-      params: {
+    try {
+      // Use workflow-based endpoint to get all master table data
+      const response: AllMasterTableDataResponse = await dynamicWorkflowAPI.getAllMasterTableData(
+        undefined, // company_id - get all companies
+        limit, // limit_per_workflow
+        offset, // offset_per_workflow
+        fullData // group_by_step - if fullData is true, organize by steps
+      )
+
+      // Validate response structure
+      if (!response || typeof response !== 'object') {
+        console.warn("Invalid response structure from getAllMasterTableData:", response)
+        return {
+          results: [],
+          total_count: 0,
+          limit,
+          offset,
+          has_more: false,
+        }
+      }
+
+      // Flatten all records from all workflows into a single array
+      const allRecords: Company[] = []
+      
+      // Handle case where workflow_data might be undefined or null
+      const workflowData = response.workflow_data || {}
+      
+      Object.values(workflowData).forEach((workflow) => {
+        if (workflow && workflow.records && Array.isArray(workflow.records) && workflow.records.length > 0) {
+          workflow.records.forEach((record: any) => {
+            if (!record || typeof record !== 'object') {
+              return // Skip invalid records
+            }
+            
+            // Transform record to Company format
+            // Handle both flat records and grouped-by-step records
+            let flatRecord = record
+            if (record.steps && Array.isArray(record.steps)) {
+              // Flatten grouped-by-step records
+              flatRecord = { ...record }
+              delete flatRecord.steps
+              record.steps.forEach((step: any) => {
+                if (step.fields && typeof step.fields === 'object') {
+                  Object.entries(step.fields).forEach(([fieldName, fieldData]: [string, any]) => {
+                    if (fieldData && typeof fieldData === 'object' && 'value' in fieldData) {
+                      flatRecord[fieldName] = fieldData.value
+                    } else {
+                      flatRecord[fieldName] = fieldData
+                    }
+                  })
+                }
+              })
+            }
+            
+            const company: Company = {
+              id: flatRecord.company_id || flatRecord.id || 0,
+              name: flatRecord.company_name || flatRecord.name || "N/A",
+              company_code: flatRecord.company_code || undefined,
+              association_no: flatRecord.association_number || flatRecord.association_no || undefined,
+              is_active: flatRecord.is_active !== undefined ? flatRecord.is_active : true,
+              // Include all other fields from the record
+              ...flatRecord,
+            }
+            allRecords.push(company)
+          })
+        }
+      })
+
+      // Apply client-side pagination if needed (backend already applies per-workflow pagination)
+      // Since we're getting data from multiple workflows, we need to handle pagination here
+      const totalCount = allRecords.length
+      const paginatedResults = allRecords.slice(offset, offset + limit)
+      const hasMore = offset + limit < totalCount
+
+      return {
+        results: paginatedResults,
+        total_count: totalCount,
         limit,
         offset,
-        full_data: fullData,
-      },
-    })
+        has_more: hasMore,
+      }
+    } catch (error: any) {
+      // Enhanced error logging
+      console.error("Error fetching companies from workflow endpoint:", {
+        error,
+        message: error?.message,
+        response: error?.response?.data,
+        status: error?.response?.status,
+        url: error?.config?.url,
+      })
+      
+      // Re-throw authentication/authorization errors so they can be handled upstream
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        throw error
+      }
+      
+      // Return empty response on other errors to maintain compatibility
+      return {
+        results: [],
+        total_count: 0,
+        limit,
+        offset,
+        has_more: false,
+      }
+    }
   },
 
   /**
