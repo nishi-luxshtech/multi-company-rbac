@@ -109,16 +109,53 @@ export class ApiClient {
 
   private handleError(error: AxiosError): ApiError {
     // Log detailed error information for debugging
-    console.error("API Error Details:", {
-      message: error.message,
-      code: error.code,
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      url: error.config?.url,
-      method: error.config?.method,
-      data: error.response?.data,
+    // Use safe serialization to avoid circular reference issues
+    const errorDetails: any = {
+      message: error.message || "Unknown error",
+      code: error.code || "UNKNOWN",
+      status: error.response?.status || null,
+      statusText: error.response?.statusText || null,
+      url: error.config?.url || null,
+      method: error.config?.method || null,
       request: error.request ? "Request sent but no response" : "No request sent",
-    })
+    }
+    
+    // Safely extract response data
+    if (error.response?.data) {
+      try {
+        if (typeof error.response.data === "string") {
+          errorDetails.data = error.response.data
+        } else if (error.response.data instanceof Error) {
+          errorDetails.data = error.response.data.message
+        } else {
+          errorDetails.data = JSON.parse(JSON.stringify(error.response.data))
+        }
+      } catch (e) {
+        errorDetails.data = "Unable to serialize error data"
+      }
+    }
+    
+    // Ensure all values are properly serialized (avoid empty objects)
+    const safeErrorDetails: any = {}
+    for (const [key, value] of Object.entries(errorDetails)) {
+      try {
+        if (value === null || value === undefined) {
+          safeErrorDetails[key] = null
+        } else if (typeof value === "object") {
+          // Try to serialize objects safely
+          try {
+            safeErrorDetails[key] = JSON.parse(JSON.stringify(value))
+          } catch {
+            safeErrorDetails[key] = String(value)
+          }
+        } else {
+          safeErrorDetails[key] = value
+        }
+      } catch {
+        safeErrorDetails[key] = String(value)
+      }
+    }
+    console.error("API Error Details:", safeErrorDetails)
 
     if (error.response) {
       // Server responded with error status
@@ -163,17 +200,29 @@ export class ApiClient {
       } else if (error.code === "ERR_NETWORK") {
         errorMessage = "Network error. Unable to reach the server. Please check if the server is running."
         errorCode = "NETWORK_ERROR"
-      } else if (error.code === "ERR_CANCELED") {
-        errorMessage = "Request was canceled."
+      } else if (error.code === "ERR_CANCELED" || error.message?.includes("canceled")) {
+        errorMessage = "Request was canceled. This may happen if the request takes too long or the page is refreshed. Please try again with a stable connection."
         errorCode = "CANCELED_ERROR"
       }
       
-      console.error("Network error details:", {
-        code: error.code,
-        message: error.message,
-        url: error.config?.url,
-        timeout: error.config?.timeout,
-      })
+      // Safe serialization for network errors
+      const networkErrorDetails: any = {
+        code: error.code || "UNKNOWN",
+        message: error.message || "Unknown network error",
+        url: error.config?.url || null,
+        timeout: error.config?.timeout || null,
+      }
+      
+      // Ensure all values are properly serialized
+      const safeNetworkErrorDetails: any = {}
+      for (const [key, value] of Object.entries(networkErrorDetails)) {
+        try {
+          safeNetworkErrorDetails[key] = value !== null && value !== undefined ? value : null
+        } catch {
+          safeNetworkErrorDetails[key] = String(value)
+        }
+      }
+      console.error("Network error details:", safeNetworkErrorDetails)
 
       return {
         message: errorMessage,
@@ -203,9 +252,25 @@ export class ApiClient {
   }
 
   async post<T>(endpoint: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    try {
     const url = this.buildUrl(endpoint)
+      console.log(`[ApiClient.post] POST ${url}`, {
+        dataSize: data ? JSON.stringify(data).length : 0,
+        hasData: !!data,
+      })
     const response = await this.client.post<T>(url, data, config)
     return response.data
+    } catch (error: any) {
+      // Error is already handled by interceptor, but log here for visibility
+      console.error(`[ApiClient.post] Error in POST ${endpoint}:`, {
+        errorType: error?.constructor?.name,
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+      })
+      // Re-throw the error (it's already been processed by interceptor)
+      throw error
+    }
   }
 
   async put<T>(endpoint: string, data?: any, config?: AxiosRequestConfig): Promise<T> {

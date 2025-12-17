@@ -95,8 +95,8 @@ const buildWorkflowDisplayMap = (workflows: FrontendWorkflow[]): Record<string, 
 
     const flattenedFields = orderedSteps.flatMap((step) =>
       (step.fields || []).map((field) => ({
-        fieldId: field.id,
-        label: field.label || field.id,
+        fieldId: field.name || field.id, // Use field.name (readable name like 'identity', 'company_name') instead of field.id (UUID)
+        label: field.label || field.name || field.id,
         required: field.required ?? false,
       }))
     )
@@ -163,20 +163,27 @@ const formatRecordValue = (value: any): string => {
   return String(value)
 }
 
-// Helper function to get field value from record, checking both UUID key and snake_case key
+// Helper function to get field value from record, using field name (readable name) instead of field ID
 const getFieldValue = (record: MasterRecord, fieldId: string, workflows?: FrontendWorkflow[]): any => {
-  // First try UUID key (direct match)
+  // fieldId is now the readable field name (like 'identity', 'company_name') from field.name
+  // First try direct match with field name
   if (record[fieldId] !== undefined && record[fieldId] !== null) {
     return record[fieldId]
   }
   
-  // If not found, try to find the field label and check snake_case version
+  // If not found, try to find the field by ID and use its name property
   if (workflows) {
     for (const workflow of workflows) {
       for (const step of workflow.steps || []) {
         for (const field of step.fields || []) {
-          if (field.id === fieldId) {
-            // Convert label to snake_case
+          // Check if fieldId matches field.id (UUID) or field.name (readable name)
+          if (field.id === fieldId || field.name === fieldId) {
+            // Use field.name (readable name) if available
+            const fieldName = field.name || fieldId
+            if (fieldName && record[fieldName] !== undefined && record[fieldName] !== null) {
+              return record[fieldName]
+            }
+            // Fallback: try converting label to snake_case
             const snakeCaseKey = field.label
               ?.toLowerCase()
               .replace(/[^a-z0-9]+/g, "_")
@@ -376,7 +383,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
             is_complete: record.is_complete !== undefined
               ? record.is_complete
               : !!(record.company_name && record.company_code),
-            onboarding_step: record.onboarding_step || 9,
+            onboarding_step: record.onboarding_step || undefined, // Will be calculated based on workflow
           }
           
           console.log("Mapped master record:", masterRecord)
@@ -400,8 +407,34 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
       setMasterRecords(allRecords)
       setFilteredMasterRecords(allRecords)
     } catch (error: any) {
-      console.error("Failed to load master records:", error)
-      console.error("Error details:", error.response?.data || error.message)
+      // Enhanced error logging
+      const errorInfo: any = {
+        errorType: typeof error,
+        hasMessage: !!error?.message,
+        message: error?.message || "Unknown error",
+        hasResponse: !!error?.response,
+        responseStatus: error?.response?.status || null,
+        responseStatusText: error?.response?.statusText || null,
+        responseData: error?.response?.data || null,
+        errorCode: error?.code || null,
+        errorName: error?.name || null,
+      }
+      
+      // Safely extract response data
+      if (error?.response?.data) {
+        try {
+          if (typeof error.response.data === "string") {
+            errorInfo.responseData = error.response.data
+          } else {
+            errorInfo.responseData = JSON.parse(JSON.stringify(error.response.data))
+          }
+        } catch {
+          errorInfo.responseData = String(error.response.data)
+        }
+      }
+      
+      console.error("Failed to load master records:", errorInfo)
+      console.error("Raw error object:", error)
       
       if (error.response?.status === 401 || error.response?.status === 403) {
         const errorDetail = error.response?.data?.detail || error.response?.data?.message || error.message || ""
@@ -710,7 +743,17 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                     ) : (
                       <Badge variant="secondary">
                         <Clock className="h-3 w-3 mr-1" />
-                        {record.onboarding_step ? `Step ${record.onboarding_step}/9` : "In Progress"}
+                        {(() => {
+                          // Get workflow to determine total steps
+                          const workflow = availableWorkflows.find(w => w.id === record.workflow_id)
+                          const totalSteps = workflow?.steps?.length || 0
+                          const currentStep = record.onboarding_step || (totalSteps > 0 ? totalSteps : undefined)
+                          
+                          if (currentStep && totalSteps > 0) {
+                            return `Step ${currentStep}/${totalSteps}`
+                          }
+                          return "In Progress"
+                        })()}
                       </Badge>
                     )}
                   </div>

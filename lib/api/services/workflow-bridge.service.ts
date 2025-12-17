@@ -34,11 +34,32 @@ export class WorkflowBridgeService {
   }
 
   private static getOrGenerateFieldName(field: FrontendWorkflowField, usedNames: Set<string>): string {
-    const source = field.name || field.label || field.id
+    // ALWAYS prioritize field.label to generate snake_case names
+    // Never use field.id (which contains generated UUID-like strings like "field_1765970479794_acrkw5ap5")
+    // Detect and ignore frontend-generated field names (field_timestamp_randomstring pattern)
+    const frontendGeneratedPattern = /^field_\d{13}_[a-z0-9]+$/i
+    
+    // Check if field.name matches the frontend-generated pattern
+    const isGeneratedName = field.name && frontendGeneratedPattern.test(field.name)
+    
+    // Priority: label > (name if not generated) > fallback
+    // Always use label if available, ignore generated names
+    let source: string
+    if (field.label && field.label.trim()) {
+      source = field.label
+    } else if (field.name && !isGeneratedName && field.name.trim()) {
+      source = field.name
+    } else {
+      // Last resort: use a generic fallback (should never happen if label is required)
+      source = "field"
+    }
+    
     let base = WorkflowBridgeService.slugifyFieldName(source, "field")
     if (!base) {
-      base = WorkflowBridgeService.slugifyFieldName(field.id, "field")
+      // This should never happen, but safety fallback
+      base = WorkflowBridgeService.slugifyFieldName("field", "field")
     }
+    
     let candidate = base
     let counter = 2
     while (usedNames.has(candidate)) {

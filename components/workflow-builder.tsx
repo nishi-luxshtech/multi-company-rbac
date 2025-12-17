@@ -273,7 +273,9 @@ export function WorkflowBuilder({ workflowId, onBack, onSave }: WorkflowBuilderP
             // fieldIndex + 1 will be the sequential order (1, 2, 3...)
             fields: step.fields.map((field, fieldIndex) => ({
               id: field.id,
-              name: field.id, // Use field.id as name for API
+              // DO NOT set name - let backend generate snake_case from label
+              // This ensures field_name in DB is always snake_case (e.g., "default_language") 
+              // instead of generated IDs (e.g., "field_1765970479794_acrkw5ap5")
               label: field.label,
               type: field.type as FieldType,
               options: field.options,

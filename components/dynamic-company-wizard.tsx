@@ -1682,10 +1682,85 @@ export function DynamicCompanyWizard({
 
       onComplete()
     } catch (error: any) {
-      console.error("Final submission error:", error)
+      // Enhanced error logging with safe serialization
+      console.error("Final submission error - Raw error:", error)
+      
+      // Helper to safely extract error info
+      const getErrorInfo = (err: any): any => {
+        if (!err) return null
+        try {
+          return {
+            message: err.message,
+            name: err.name,
+            code: err.code,
+            stack: err.stack?.substring(0, 200), // First 200 chars of stack
+            response: err.response ? {
+              status: err.response.status,
+              statusText: err.response.statusText,
+              data: err.response.data,
+            } : null,
+            request: err.request ? "Request object exists" : null,
+            config: err.config ? {
+              url: err.config.url,
+              method: err.config.method,
+            } : null,
+          }
+        } catch (e) {
+          return { error: "Could not serialize error", originalError: String(err) }
+        }
+      }
+      
+      const errorInfo = getErrorInfo(error)
+      console.error("Final submission error - Parsed:", errorInfo)
+      
+      // Extract error message from various possible structures
+      let errorMessage = "Failed to create company. Please try again."
+      
+      if (error) {
+        // Priority 1: Check ApiError message (from http-client)
+        if (error.message && typeof error.message === "string") {
+          errorMessage = error.message
+        } 
+        // Priority 2: Check Axios response data.detail
+        else if (error.response?.data?.detail) {
+          const detail = error.response.data.detail
+          if (typeof detail === "string") {
+            errorMessage = detail
+          } else if (Array.isArray(detail)) {
+            errorMessage = detail.map((err: any) => `${err.loc?.join(".") || ""}: ${err.msg || ""}`).join("; ")
+          } else {
+            try {
+              errorMessage = JSON.stringify(detail)
+            } catch {
+              errorMessage = "Validation error (see console for details)"
+            }
+          }
+        }
+        // Priority 3: Check response data.message
+        else if (error.response?.data?.message) {
+          errorMessage = error.response.data.message
+        }
+        // Priority 4: Check response status text
+        else if (error.response?.statusText) {
+          errorMessage = `${error.response.status} ${error.response.statusText}`
+        }
+        // Priority 5: Check error code
+        else if (error.code) {
+          if (error.code === "ERR_CANCELED" || error.code === "CANCELED_ERROR") {
+            errorMessage = "Request was canceled. This may happen if the request takes too long. Please try again and ensure you have a stable connection."
+          } else if (error.code === "ERR_NETWORK") {
+            errorMessage = "Network error. Please check if the backend server is running."
+          } else if (error.code === "ECONNABORTED") {
+            errorMessage = "Request timeout. The server took too long to respond."
+          } else {
+            errorMessage = `Error: ${error.code}`
+          }
+        }
+      }
+      
       toast({
         title: "Submission Failed",
-        description: error.message || "Failed to create company. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       })
     } finally {

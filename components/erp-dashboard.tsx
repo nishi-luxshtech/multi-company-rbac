@@ -84,7 +84,7 @@ export function ERPDashboard() {
               is_complete: record.is_complete !== undefined 
                 ? record.is_complete 
                 : !!(record.company_name && record.company_code),
-              onboarding_step: record.onboarding_step || 9,
+              onboarding_step: record.onboarding_step || undefined, // Will be calculated based on workflow
               ...record
             })
           })
