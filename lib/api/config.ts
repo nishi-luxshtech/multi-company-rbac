@@ -4,7 +4,7 @@
  */
 
 export const API_CONFIG = {
-  baseURL: (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000").trim(),
+  baseURL: (process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8010").trim(),
   apiVersion: process.env.NEXT_PUBLIC_API_VERSION || "v1",
   timeout: 30000, // 30 seconds
 } as const
@@ -15,7 +15,7 @@ export const API_ENDPOINTS = {
     login: "/auth/token",
     logout: "/auth/logout",
   },
-  
+
   // Core Workflow Template endpoints (using workflow builder endpoints)
   workflows: {
     base: "/workflows/builder",
@@ -25,7 +25,7 @@ export const API_ENDPOINTS = {
     delete: (workflow_id: string) => `/workflows/builder/${workflow_id}`,
     validate: (id: string) => `/workflows/builder/${id}/validation`,
   },
-  
+
   // Dynamic Workflow Builder endpoints (primary focus)
   dynamicWorkflows: {
     base: "/workflows/builder",
@@ -46,7 +46,7 @@ export const API_ENDPOINTS = {
     deleteTable: (id: string) => `/workflows/builder/${id}/table`,
     validate: (id: string) => `/workflows/builder/${id}/validation`,
   },
-  
+
   // Workflow instance endpoints (for running workflows)
   workflowInstances: {
     create: () => "/workflows/instances",
@@ -59,10 +59,10 @@ export const API_ENDPOINTS = {
 export const getFullUrl = (endpoint: string): string => {
   // Normalize baseURL (remove trailing slashes)
   const baseURL = API_CONFIG.baseURL.trim().replace(/\/+$/, "")
-  
+
   // Remove leading slash if present
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint
-  
+
   // If endpoint already includes /api/v1, use it as-is
   // Otherwise, check if it's a workflow builder endpoint (starts with workflows/builder)
   // Workflow builder endpoints don't need /api/v1 prefix

@@ -16,9 +16,9 @@ import type { Workflow } from "@/lib/workflow-storage"
 
 function ERPApp() {
   const [activeTab, setActiveTab] = useState("dashboard")
-  const [onboardingCompanyId, setOnboardingCompanyId] = useState<number | undefined>()
+  const [onboardingCompanyId, setOnboardingCompanyId] = useState<string | undefined>()
   const [onboardingRecordId, setOnboardingRecordId] = useState<string | undefined>()
-  const [selectedCompanyId, setSelectedCompanyId] = useState<number | undefined>()
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | undefined>()
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null)
   const [showWorkflowBuilder, setShowWorkflowBuilder] = useState(false)
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null)
@@ -26,10 +26,10 @@ function ERPApp() {
   const [workflowChain, setWorkflowChain] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<"wizard" | "tabs">("wizard")
 
-  const handleStartOnboarding = (companyId?: number, workflowId?: string, recordId?: string) => {
+  const handleStartOnboarding = (companyId?: string, workflowId?: string, recordId?: string) => {
     setOnboardingCompanyId(companyId)
     setOnboardingRecordId(recordId)
-    
+
     // If both companyId and workflowId are provided, skip workflow selector and go directly to wizard
     if (companyId && workflowId) {
       setSelectedWorkflowId(workflowId)
@@ -88,7 +88,7 @@ function ERPApp() {
     setActiveTab("companies")
   }
 
-  const handleViewCompany = (companyId: number) => {
+  const handleViewCompany = (companyId: string) => {
     setSelectedCompanyId(companyId)
     setActiveTab("company-details")
   }

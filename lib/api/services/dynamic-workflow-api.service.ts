@@ -119,7 +119,7 @@ export const dynamicWorkflowAPI = {
    */
   async getTableData(
     id: string,
-    companyId?: number,
+    companyId?: string,
     limit: number = 100,
     offset: number = 0,
     groupByStep: boolean = false
@@ -153,7 +153,7 @@ export const dynamicWorkflowAPI = {
    * Get all master table records from ALL workflows
    */
   async getAllMasterTableData(
-    companyId?: number,
+    companyId?: string,
     limitPerWorkflow: number = 100,
     offsetPerWorkflow: number = 0,
     groupByStep: boolean = false

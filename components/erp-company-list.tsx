@@ -43,15 +43,15 @@ import {
 } from "@/components/ui/select"
 
 interface ERPCompanyListProps {
-  onStartOnboarding: (companyId?: number, workflowId?: string, recordId?: string) => void
-  onViewCompany?: (companyId: number) => void
+  onStartOnboarding: (companyId?: string, workflowId?: string, recordId?: string) => void
+  onViewCompany?: (companyId: string) => void
 }
 
 interface MasterRecord {
   id: string | number
   workflow_id: string
   workflow_name?: string
-  company_id?: number
+  company_id?: string
   company_name: string
   company_code?: string
   country?: string
@@ -59,6 +59,7 @@ interface MasterRecord {
   accounting_currency?: string
   is_complete?: boolean
   onboarding_step?: number
+  is_placeholder?: boolean
   [key: string]: any // For other dynamic fields
 }
 
@@ -169,7 +170,7 @@ const getFieldValue = (record: MasterRecord, fieldId: string, workflows?: Fronte
   if (record[fieldId] !== undefined && record[fieldId] !== null) {
     return record[fieldId]
   }
-  
+
   // If not found, try to find the field label and check snake_case version
   if (workflows) {
     for (const workflow of workflows) {
@@ -181,7 +182,7 @@ const getFieldValue = (record: MasterRecord, fieldId: string, workflows?: Fronte
               ?.toLowerCase()
               .replace(/[^a-z0-9]+/g, "_")
               .replace(/^_+|_+$/g, "") || ""
-            
+
             if (snakeCaseKey && record[snakeCaseKey] !== undefined && record[snakeCaseKey] !== null) {
               return record[snakeCaseKey]
             }
@@ -191,7 +192,7 @@ const getFieldValue = (record: MasterRecord, fieldId: string, workflows?: Fronte
       }
     }
   }
-  
+
   // Fallback: try common snake_case field names
   const commonFields: Record<string, string[]> = {
     "company_name": ["company_name"],
@@ -202,13 +203,13 @@ const getFieldValue = (record: MasterRecord, fieldId: string, workflows?: Fronte
     "default_language": ["default_language"],
     "company_creation_date": ["company_creation_date"],
   }
-  
+
   for (const [key, aliases] of Object.entries(commonFields)) {
     if (aliases.some(alias => record[alias] !== undefined && record[alias] !== null)) {
       return record[aliases.find(alias => record[alias] !== undefined && record[alias] !== null)!]
     }
   }
-  
+
   return undefined
 }
 
@@ -218,7 +219,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
   const [filteredMasterRecords, setFilteredMasterRecords] = useState<MasterRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(null)
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null)
   const [showDetailsDialog, setShowDetailsDialog] = useState(false)
   const [deleteCompanyId, setDeleteCompanyId] = useState<number | string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -227,7 +228,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
   const [viewWorkflowData, setViewWorkflowData] = useState<{
     show: boolean
     workflowId: string | null
-    companyId: number | null
+    companyId: string | null
     recordId: string | null
     companyName: string | null
   }>({
@@ -343,45 +344,61 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
       // Flatten all records from all workflows into a single array
       // response.workflow_data is a dictionary, so we need to iterate over its values
       const allRecords: MasterRecord[] = []
-      
+
       Object.values(response.workflow_data || {}).forEach((workflow) => {
         console.log(`Processing workflow: ${workflow.workflow_name}`, workflow)
-        
-        // Only process workflows that have records
-        if (!workflow.records || workflow.records.length === 0) {
-          console.log(`Skipping workflow ${workflow.workflow_id} - no records`)
-          return
-        }
-        
-        workflow.records.forEach((record) => {
-          console.log("Processing record:", record)
-          
-          // Extract fields directly from the record - API returns fields with exact names
-          // Based on API response: company_name, company_code, country, form_of_business, accounting_currency
-          // Spread record first, then override with our mapped fields to ensure correct values
-          const masterRecord: MasterRecord = {
-            ...record, // Include all fields from the record first
-            // Then override with our mapped/processed fields
-            id: record.id || record.company_id || `${workflow.workflow_id}-${Math.random()}`,
+
+        // Process workflows that have records
+        if (workflow.records && workflow.records.length > 0) {
+          workflow.records.forEach((record) => {
+            console.log("Processing record:", record)
+
+            // Extract fields directly from the record - API returns fields with exact names
+            // Based on API response: company_name, company_code, country, form_of_business, accounting_currency
+            // Spread record first, then override with our mapped fields to ensure correct values
+            const masterRecord: MasterRecord = {
+              ...record, // Include all fields from the record first
+              // Then override with our mapped/processed fields
+              id: record.id || record.company_id || `${workflow.workflow_id}-${Math.random()}`,
+              workflow_id: workflow.workflow_id,
+              workflow_name: workflow.workflow_name,
+              company_id: record.company_id, // Preserve company_id from record
+              // Direct field access - keep undefined so UI can fall back gracefully
+              company_name: record.company_name ?? "",
+              company_code: record.company_code ?? String(record.company_id || record.id || ""),
+              country: record.country ?? record.address_country ?? "",
+              form_of_business: record.form_of_business ?? "",
+              accounting_currency: record.accounting_currency ?? "",
+              // Determine completion status - assume complete if all required fields are present
+              is_complete: record.is_complete !== undefined
+                ? record.is_complete
+                : !!(record.company_name && record.company_code),
+              onboarding_step: record.onboarding_step || 9,
+            }
+
+            console.log("Mapped master record:", masterRecord)
+            allRecords.push(masterRecord)
+          })
+        } else {
+          // For workflows without records, create a placeholder record for onboarding
+          console.log(`Creating placeholder for workflow ${workflow.workflow_id} - no records yet`)
+          const placeholderRecord: MasterRecord = {
+            id: `placeholder-${workflow.workflow_id}`,
             workflow_id: workflow.workflow_id,
             workflow_name: workflow.workflow_name,
-            company_id: record.company_id, // Preserve company_id from record
-            // Direct field access - keep undefined so UI can fall back gracefully
-            company_name: record.company_name ?? "",
-            company_code: record.company_code ?? String(record.company_id || record.id || ""),
-            country: record.country ?? record.address_country ?? "",
-            form_of_business: record.form_of_business ?? "",
-            accounting_currency: record.accounting_currency ?? "",
-            // Determine completion status - assume complete if all required fields are present
-            is_complete: record.is_complete !== undefined
-              ? record.is_complete
-              : !!(record.company_name && record.company_code),
-            onboarding_step: record.onboarding_step || 9,
+            company_id: "", // Empty for placeholder
+            company_name: `Start ${workflow.workflow_name} Onboarding`,
+            company_code: "",
+            country: "",
+            form_of_business: "",
+            accounting_currency: "",
+            is_complete: false,
+            onboarding_step: 0,
+            // Mark as placeholder
+            is_placeholder: true,
           }
-          
-          console.log("Mapped master record:", masterRecord)
-          allRecords.push(masterRecord)
-        })
+          allRecords.push(placeholderRecord)
+        }
       })
 
       console.log("Total master records:", allRecords.length)
@@ -402,15 +419,15 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
     } catch (error: any) {
       console.error("Failed to load master records:", error)
       console.error("Error details:", error.response?.data || error.message)
-      
+
       if (error.response?.status === 401 || error.response?.status === 403) {
         const errorDetail = error.response?.data?.detail || error.response?.data?.message || error.message || ""
         const errorLower = errorDetail.toLowerCase()
-        
+
         // Check for authentication errors
         if (
-          errorLower.includes("token") || 
-          errorLower.includes("invalid") || 
+          errorLower.includes("token") ||
+          errorLower.includes("invalid") ||
           errorLower.includes("expired") ||
           errorLower.includes("not authenticated") ||
           errorLower.includes("authentication") ||
@@ -434,7 +451,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
       } else {
         setError(error.response?.data?.detail || error.response?.data?.message || error.message || "Failed to load companies from server")
       }
-      
+
       setMasterRecords([])
       setFilteredMasterRecords([])
     } finally {
@@ -442,7 +459,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
     }
   }
 
-  const handleViewDetails = (companyId: number) => {
+  const handleViewDetails = (companyId: string) => {
     if (onViewCompany) {
       onViewCompany(companyId)
     } else {
@@ -452,10 +469,15 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
   }
 
   const handleViewMasterRecord = (record: MasterRecord) => {
+    // Don't allow viewing placeholder records
+    if (record.is_placeholder) {
+      return
+    }
+
     const workflowId = record.workflow_id
-    // Extract company_id from the record (it might be in the record object itself)
-    const companyId = record.company_id || (typeof record.id === "number" ? record.id : undefined)
-    
+    // Extract company_id from the record (it should be a string UUID now)
+    const companyId = record.company_id || (typeof record.id === "string" ? record.id : String(record.id))
+
     if (!workflowId) {
       console.error("No workflow ID found in record")
       return
@@ -476,15 +498,39 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
     try {
       setIsDeleting(true)
       console.log("Deleting master record", deleteCompanyId)
-      
+
       // Find the record to get workflow_id and record_id
       const record = masterRecords.find(r => r.id === deleteCompanyId || r.company_id === deleteCompanyId)
-      
-      if (!record || !record.workflow_id) {
-        console.error("Cannot delete: record or workflow_id not found")
+
+      if (!record) {
+        console.error("Cannot delete: record not found")
         toast({
           title: "Error",
           description: "Cannot delete: record not found",
+          variant: "destructive",
+        })
+        setDeleteCompanyId(null)
+        setIsDeleting(false)
+        return
+      }
+
+      // Don't allow deleting placeholder records
+      if (record.is_placeholder) {
+        toast({
+          title: "Cannot Delete",
+          description: "Cannot delete placeholder records. Start onboarding first to create actual company data.",
+          variant: "destructive",
+        })
+        setDeleteCompanyId(null)
+        setIsDeleting(false)
+        return
+      }
+
+      if (!record.workflow_id) {
+        console.error("Cannot delete: workflow_id not found")
+        toast({
+          title: "Error",
+          description: "Cannot delete: workflow not found",
           variant: "destructive",
         })
         setDeleteCompanyId(null)
@@ -500,18 +546,18 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
       // Delete via workflow builder API
       // DELETE /workflows/builder/{workflow_id}/table-data/{record_id}
       await dynamicWorkflowAPI.deleteTableRecord(workflowId, recordId)
-      
+
       console.log(`Successfully deleted record ${recordId} from workflow ${workflowId}`)
-      
+
       // Show success message
       toast({
         title: "Company Deleted",
         description: `${companyName} has been permanently deleted.`,
       })
-      
+
       // Reload master records from server to reflect the deletion
       await loadMasterRecords()
-      
+
       // Close the dialog
       setDeleteCompanyId(null)
     } catch (error: any) {
@@ -563,7 +609,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
               </p>
               <p className="text-sm text-muted-foreground mb-4">{error}</p>
               {!isPermissionError && (
-                <Button 
+                <Button
                   onClick={() => {
                     // Check token before retrying
                     const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null
@@ -572,7 +618,7 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                     } else {
                       loadMasterRecords()
                     }
-                  }} 
+                  }}
                   variant="outline"
                 >
                   Try Again
@@ -702,7 +748,12 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
                 <CardContent className="space-y-4">
                   {/* Status Badge */}
                   <div>
-                    {record.is_complete ? (
+                    {record.is_placeholder ? (
+                      <Badge variant="outline">
+                        <Plus className="h-3 w-3 mr-1" />
+                        Not Started
+                      </Badge>
+                    ) : record.is_complete ? (
                       <Badge variant="default" className="bg-green-600">
                         <CheckCircle2 className="h-3 w-3 mr-1" />
                         Complete
@@ -737,39 +788,58 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
 
                   {/* Action Buttons */}
                   <div className="flex space-x-2 pt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 bg-transparent"
-                      onClick={() => handleViewMasterRecord(record)}
-                    >
-                      <Eye className="h-3 w-3 mr-1" />
-                      View
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 bg-transparent"
-                      onClick={() => {
-                        // Use company_id if available, otherwise try to parse id as number
-                        const companyId = record.company_id || (typeof record.id === "number" ? record.id : undefined)
-                        const workflowId = record.workflow_id
-                        // Use record.id as recordId (convert to string if needed)
-                        const recordId = typeof record.id === "string" ? record.id : String(record.id)
-                        onStartOnboarding(companyId, workflowId, recordId)
-                      }}
-                    >
-                      <Edit className="h-3 w-3 mr-1" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive bg-transparent"
-                      onClick={() => setDeleteCompanyId(record.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    {record.is_placeholder ? (
+                      // For placeholder records, show Start Onboarding button
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => {
+                          const workflowId = record.workflow_id
+                          onStartOnboarding(undefined, workflowId, undefined)
+                        }}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Start Onboarding
+                      </Button>
+                    ) : (
+                      // For real records, show normal actions
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 bg-transparent"
+                          onClick={() => handleViewMasterRecord(record)}
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          View
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 bg-transparent"
+                          onClick={() => {
+                            // Use company_id if available, otherwise try to parse id as number
+                            const companyId = record.company_id || (typeof record.id === "number" ? record.id : undefined)
+                            const workflowId = record.workflow_id
+                            // Use record.id as recordId (convert to string if needed)
+                            const recordId = typeof record.id === "string" ? record.id : String(record.id)
+                            onStartOnboarding(companyId, workflowId, recordId)
+                          }}
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:text-destructive bg-transparent"
+                          onClick={() => setDeleteCompanyId(record.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -799,8 +869,8 @@ export function ERPCompanyList({ onStartOnboarding, onViewCompany }: ERPCompanyL
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDelete} 
+            <AlertDialogAction
+              onClick={handleDelete}
               disabled={isDeleting}
               className="bg-destructive hover:bg-destructive/90"
             >
