@@ -66,13 +66,40 @@ export function WorkflowDataViewPage({
       setError(null)
       console.log("Loading workflow data:", { workflowId, companyId, recordId })
 
-      const data = await dynamicWorkflowAPI.getTableData(
-        workflowId,
-        companyId,
-        100,
-        0,
-        true // group_by_step = true
-      )
+      let data: WorkflowTableDataResponse
+
+      // Use getTableRecord API if recordId is provided (more efficient and accurate)
+      if (recordId) {
+        console.log("Using getTableRecord API for specific record:", recordId)
+        const record = await dynamicWorkflowAPI.getTableRecord(workflowId, recordId)
+        console.log("Record fetched from getTableRecord:", record)
+        
+        // Convert single record response to WorkflowTableDataResponse format for compatibility
+        data = {
+          workflow_id: workflowId,
+          workflow_name: record.workflow_name || "",
+          table_name: "domain_tables", // Will be set by backend
+          total_records: 1,
+          records: [record],
+          pagination: {
+            limit: 1,
+            offset: 0,
+            has_more: false
+          },
+          grouped_by_step: true // getTableRecord always returns grouped by step
+        }
+      } else {
+        // Fallback to getTableData if no recordId (backward compatibility)
+        console.log("Using getTableData API (no recordId provided)")
+        data = await dynamicWorkflowAPI.getTableData(
+          workflowId,
+          companyId,
+          100,
+          0,
+          true // group_by_step = true
+        )
+      }
+      
       console.log("Workflow data fetched:", data)
       setWorkflowData(data)
     } catch (error: any) {
