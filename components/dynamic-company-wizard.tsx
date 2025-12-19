@@ -187,7 +187,37 @@ export function DynamicCompanyWizard({
         }
         
         try {
-          const record = await dynamicWorkflowAPI.getTableRecord(workflowId, recordId)
+          // Use getTableData with group_by_step=true to fetch the record
+          const tableDataResponse = await dynamicWorkflowAPI.getTableData(
+            workflowId,
+            companyId,
+            100,
+            0,
+            true // group_by_step = true
+          )
+          
+          // Find the matching record
+          let record: any = null
+          if (tableDataResponse.records && tableDataResponse.records.length > 0) {
+            if (recordId) {
+              record = tableDataResponse.records.find(r => 
+                r.id === recordId || String(r.id) === String(recordId)
+              )
+            }
+            if (!record && companyId) {
+              record = tableDataResponse.records.find(r => 
+                r.company_id === companyId || String(r.company_id) === String(companyId)
+              )
+            }
+            if (!record && tableDataResponse.records.length === 1) {
+              record = tableDataResponse.records[0]
+            }
+          }
+          
+          if (!record) {
+            console.error("Record not found in fetchAndSetCountry fallback")
+            return
+          }
           
           setFormData(prev => {
             const updated = { ...prev }
@@ -366,11 +396,61 @@ export function DynamicCompanyWizard({
       isLoadingDataRef.current = true
       setIsLoadingData(true)
       setLoadError(null)
-      console.log("Loading existing company data for editing:", { workflowId, recordId })
+      console.log("Loading existing company data for editing:", { workflowId, recordId, companyId })
       
-      // Fetch existing data using the get-by-id endpoint
-      // EXPECTED RESPONSE: Should contain address_country field
-      const existingRecord = await dynamicWorkflowAPI.getTableRecord(workflowId, recordId)
+      // Fetch existing data using getTableData with group_by_step=true
+      // This endpoint returns records array, we need to find the matching record
+      const tableDataResponse = await dynamicWorkflowAPI.getTableData(
+        workflowId,
+        companyId, // Filter by company_id if available
+        100, // limit
+        0, // offset
+        true // group_by_step = true
+      )
+      
+      console.log("Table data response:", {
+        total_records: tableDataResponse.total_records,
+        records_count: tableDataResponse.records?.length || 0,
+        grouped_by_step: tableDataResponse.grouped_by_step
+      })
+      
+      // Find the matching record by recordId or companyId
+      let existingRecord: any = null
+      if (tableDataResponse.records && tableDataResponse.records.length > 0) {
+        if (recordId) {
+          // Try to find by record ID (UUID string)
+          existingRecord = tableDataResponse.records.find(r => 
+            r.id === recordId || String(r.id) === String(recordId)
+          )
+        }
+        
+        // If not found by recordId, try by companyId
+        if (!existingRecord && companyId) {
+          existingRecord = tableDataResponse.records.find(r => 
+            r.company_id === companyId || String(r.company_id) === String(companyId)
+          )
+        }
+        
+        // If still not found, use the first record (fallback)
+        if (!existingRecord && tableDataResponse.records.length === 1) {
+          existingRecord = tableDataResponse.records[0]
+          console.log("Using first (and only) record as fallback")
+        }
+      }
+      
+      if (!existingRecord) {
+        throw new Error(
+          `Record not found. Total records: ${tableDataResponse.total_records}, ` +
+          `Searched for recordId: ${recordId}, companyId: ${companyId}`
+        )
+      }
+      
+      console.log("Found matching record:", {
+        id: existingRecord.id,
+        company_id: existingRecord.company_id,
+        has_steps: !!existingRecord.steps,
+        steps_count: existingRecord.steps?.length || 0
+      })
       
       console.log("=== LOADING EXISTING DATA ===")
       console.log("Full API Response:", JSON.stringify(existingRecord, null, 2))
@@ -396,10 +476,25 @@ export function DynamicCompanyWizard({
       }
       
       // Method 2: Check structured steps format
+      // Handle both array format (legacy) and object format (group_by_step=true)
       if (!countryValueFromAPI && existingRecord.steps && Array.isArray(existingRecord.steps)) {
         for (const step of existingRecord.steps) {
-          if (step.fields && Array.isArray(step.fields)) {
-            for (const field of step.fields) {
+          if (step.fields) {
+            let fieldsToCheck: any[] = []
+            
+            if (Array.isArray(step.fields)) {
+              // Legacy format: fields is an array
+              fieldsToCheck = step.fields
+            } else if (typeof step.fields === 'object') {
+              // New format (group_by_step=true): fields is an object { [fieldName]: { value, ... } }
+              fieldsToCheck = Object.entries(step.fields).map(([fieldName, fieldData]: [string, any]) => ({
+                name: fieldName,
+                field_name: fieldName,
+                value: fieldData?.value
+              }))
+            }
+            
+            for (const field of fieldsToCheck) {
               // Check if this field is address_country or country
               const fieldName = field.name || field.field_name || ""
               const fieldValue = field.value
@@ -410,7 +505,7 @@ export function DynamicCompanyWizard({
                   fieldValue && fieldValue !== "" && fieldValue !== null) {
                 countryValueFromAPI = String(fieldValue).trim()
                 console.log("🎯 DIRECT EXTRACTION: Found country in steps format:", {
-                  stepName: step.name,
+                  stepName: step.name || step.step_name,
                   fieldName: fieldName,
                   value: countryValueFromAPI
                 })
@@ -624,14 +719,45 @@ export function DynamicCompanyWizard({
       }
       
       // Process structured steps format if available
+      // When group_by_step=true, fields is an object { [fieldName]: { field_id, field_label, value, ... } }
+      // When group_by_step=false or from getTableRecord, fields might be an array
       if (existingRecord.steps && Array.isArray(existingRecord.steps)) {
         console.log("Processing steps from API response:", existingRecord.steps.length)
         
         existingRecord.steps.forEach((apiStep: any) => {
-          console.log("Processing step:", apiStep.name || apiStep.step_name, "Fields:", apiStep.fields?.length || 0)
+          const stepName = apiStep.name || apiStep.step_name
+          const fieldsCount = apiStep.fields 
+            ? (Array.isArray(apiStep.fields) ? apiStep.fields.length : Object.keys(apiStep.fields).length)
+            : 0
+          console.log("Processing step:", stepName, "Fields:", fieldsCount)
           
-          if (apiStep.fields && Array.isArray(apiStep.fields)) {
-            apiStep.fields.forEach((apiField: any) => {
+          if (apiStep.fields) {
+            // Handle both formats: object (group_by_step=true) and array (legacy)
+            const fieldsToProcess: any[] = []
+            
+            if (Array.isArray(apiStep.fields)) {
+              // Legacy format: fields is an array
+              fieldsToProcess.push(...apiStep.fields.map((field: any) => ({
+                name: field.name,
+                field_id: field.field_id,
+                value: field.value,
+                label: field.label || field.field_label
+              })))
+            } else if (typeof apiStep.fields === 'object') {
+              // New format (group_by_step=true): fields is an object { [fieldName]: { field_id, field_label, value, ... } }
+              Object.entries(apiStep.fields).forEach(([fieldName, fieldData]: [string, any]) => {
+                if (fieldData && typeof fieldData === 'object') {
+                  fieldsToProcess.push({
+                    name: fieldName, // Use the key as the field name
+                    field_id: fieldData.field_id,
+                    value: fieldData.value,
+                    label: fieldData.field_label || fieldData.label
+                  })
+                }
+              })
+            }
+            
+            fieldsToProcess.forEach((apiField: any) => {
               const apiFieldName = apiField.name
               const apiFieldId = apiField.field_id
               const apiFieldValue = apiField.value
