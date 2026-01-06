@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { validateStep as validateStepUtil, validateField } from "@/lib/validation-utils"
 import { useContext } from "react"
 import { AuthContext, type Company } from "@/lib/auth-context"
+import { AddressStepTable, type CompanyAddress } from "@/components/address-step-table"
 
 interface DynamicCompanyWizardProps {
   workflowId: string
@@ -56,6 +57,7 @@ export function DynamicCompanyWizard({
   const [isLoadingData, setIsLoadingData] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [dataLoaded, setDataLoaded] = useState(false)
+  const [addresses, setAddresses] = useState<CompanyAddress[]>([])
   const { toast } = useToast()
   
   // Refs to track loading state and prevent duplicate API calls
@@ -1310,6 +1312,224 @@ export function DynamicCompanyWizard({
         })
       }, 100)
 
+      // Load addresses from API response if available
+      // Addresses are stored in domain table, so they might be in the response
+      // Check multiple sources: domain_tables.company_address (primary), steps structure, flat structure
+      if (existingRecord && (
+        existingRecord.domain_tables?.company_address || 
+        existingRecord.steps || 
+        existingRecord.address_country || 
+        existingRecord.address_line_1
+      )) {
+        const loadedAddresses: CompanyAddress[] = []
+        const loadedAddressIds = new Set<string>() // Track loaded IDs to prevent duplicates
+        
+        // PRIORITY 1: Check domain_tables.company_address FIRST (most reliable source for multiple addresses)
+        // This is the primary source when using domain tables
+        if (existingRecord.domain_tables?.company_address) {
+          const companyAddressData = existingRecord.domain_tables.company_address
+          console.log(`🔍 [PRIORITY 1] Loading addresses from domain_tables.company_address:`, {
+            isArray: Array.isArray(companyAddressData),
+            isObject: typeof companyAddressData === 'object' && companyAddressData !== null,
+            length: Array.isArray(companyAddressData) ? companyAddressData.length : 1
+          })
+          
+          // Handle both array and object formats
+          if (Array.isArray(companyAddressData)) {
+            // Multiple addresses (array format) - PRIMARY CASE
+            console.log(`🔍 Found ${companyAddressData.length} address(es) in domain_tables.company_address array`)
+            companyAddressData.forEach((record: any, idx: number) => {
+              const addressId = record.id || `temp-${idx}`
+              if (!loadedAddressIds.has(addressId)) {
+                console.log(`🔍 Loading address ${idx} from domain_tables:`, {
+                  id: record.id,
+                  address_line_1: record.address_line_1,
+                  city: record.city
+                })
+                loadedAddresses.push({
+                  id: record.id,
+                  company_id: record.company_id || companyId?.toString(),
+                  workflow_id: workflowId,
+                  workflow_instance_id: record.workflow_instance_id || existingRecord.workflow_instance_id || null,
+                  step_id: record.step_id,
+                  address_line_1: record.address_line_1,
+                  address_line_2: record.address_line_2,
+                  city: record.city,
+                  state_province: record.state_province,
+                  pincode: record.pincode,
+                  county: record.county,
+                  address_country: record.address_country,
+                  delivery: record.delivery !== undefined ? record.delivery : false,
+                  document: record.document !== undefined ? record.document : false,
+                  pay: record.pay !== undefined ? record.pay : false,
+                  visit: record.visit !== undefined ? record.visit : false,
+                  created_at: record.created_at,
+                  updated_at: record.updated_at,
+                  created_by: record.created_by,
+                  updated_by: record.updated_by,
+                })
+                loadedAddressIds.add(addressId)
+              }
+            })
+          } else if (typeof companyAddressData === 'object' && companyAddressData !== null) {
+            // Single address (object format - backward compatibility)
+            const addressId = companyAddressData.id || 'temp-single'
+            if (!loadedAddressIds.has(addressId)) {
+              console.log(`🔍 Found 1 address in domain_tables.company_address object format (backward compatibility)`)
+              loadedAddresses.push({
+                id: companyAddressData.id,
+                company_id: companyAddressData.company_id || companyId?.toString(),
+                workflow_id: workflowId,
+                workflow_instance_id: companyAddressData.workflow_instance_id || existingRecord.workflow_instance_id || null,
+                step_id: companyAddressData.step_id,
+                address_line_1: companyAddressData.address_line_1,
+                address_line_2: companyAddressData.address_line_2,
+                city: companyAddressData.city,
+                state_province: companyAddressData.state_province,
+                pincode: companyAddressData.pincode,
+                county: companyAddressData.county,
+                address_country: companyAddressData.address_country,
+                delivery: companyAddressData.delivery !== undefined ? companyAddressData.delivery : false,
+                document: companyAddressData.document !== undefined ? companyAddressData.document : false,
+                pay: companyAddressData.pay !== undefined ? companyAddressData.pay : false,
+                visit: companyAddressData.visit !== undefined ? companyAddressData.visit : false,
+                created_at: companyAddressData.created_at,
+                updated_at: companyAddressData.updated_at,
+                created_by: companyAddressData.created_by,
+                updated_by: companyAddressData.updated_by,
+              })
+              loadedAddressIds.add(addressId)
+            }
+          }
+        }
+        
+        // PRIORITY 2: Check if addresses are in steps structure (alternative format, backward compatibility)
+        // Only check if no addresses were loaded from domain_tables
+        if (loadedAddresses.length === 0 && existingRecord.steps && Array.isArray(existingRecord.steps)) {
+          const addressStep = existingRecord.steps.find((step: any) => 
+            step.name?.toLowerCase().includes("address") || 
+            step.step_name?.toLowerCase().includes("address") ||
+            step.order === 2 || step.step_order === 2
+          )
+          
+          if (addressStep) {
+            // Check if step has multiple address records (domain table returns array)
+            if (Array.isArray(addressStep.records) && addressStep.records.length > 0) {
+              // Multiple addresses from domain table
+              console.log(`🔍 [PRIORITY 2] Found ${addressStep.records.length} address(es) in steps structure`)
+              addressStep.records.forEach((record: any) => {
+                const addressId = record.id || `temp-${Date.now()}-${Math.random()}`
+                if (!loadedAddressIds.has(addressId)) {
+                  loadedAddresses.push({
+                    id: record.id,
+                    company_id: record.company_id || companyId?.toString(),
+                    workflow_id: workflowId,
+                    workflow_instance_id: record.workflow_instance_id || existingRecord.workflow_instance_id || null,
+                    step_id: addressStep.step_id || addressStep.id,
+                    address_line_1: record.address_line_1,
+                    address_line_2: record.address_line_2,
+                    city: record.city,
+                    state_province: record.state_province,
+                    pincode: record.pincode,
+                    county: record.county,
+                    address_country: record.address_country,
+                    delivery: record.delivery || false,
+                    document: record.document || false,
+                    pay: record.pay || false,
+                    visit: record.visit || false,
+                  })
+                  loadedAddressIds.add(addressId)
+                }
+              })
+            } else if (addressStep.fields) {
+              // Single address in fields structure (backward compatibility)
+              const addressData: CompanyAddress = {
+                company_id: companyId?.toString(),
+                workflow_id: workflowId,
+                workflow_instance_id: existingRecord.workflow_instance_id || null,
+                step_id: addressStep.step_id || addressStep.id,
+              }
+              
+              // Extract address fields from step.fields
+              if (typeof addressStep.fields === 'object' && !Array.isArray(addressStep.fields)) {
+                Object.entries(addressStep.fields).forEach(([fieldName, fieldData]: [string, any]) => {
+                  const value = fieldData?.value || fieldData
+                  if (value !== undefined && value !== null && value !== "") {
+                    // Map field names to address properties
+                    const fieldNameLower = fieldName.toLowerCase()
+                    if (fieldNameLower.includes("address_line_1") || fieldNameLower.includes("addressline1")) {
+                      addressData.address_line_1 = String(value)
+                    } else if (fieldNameLower.includes("address_line_2") || fieldNameLower.includes("addressline2")) {
+                      addressData.address_line_2 = String(value)
+                    } else if (fieldNameLower.includes("city")) {
+                      addressData.city = String(value)
+                    } else if (fieldNameLower.includes("state") || fieldNameLower.includes("province")) {
+                      addressData.state_province = String(value)
+                    } else if (fieldNameLower.includes("pincode") || fieldNameLower.includes("postal_code") || fieldNameLower.includes("postalcode")) {
+                      addressData.pincode = String(value)
+                    } else if (fieldNameLower.includes("county")) {
+                      addressData.county = String(value)
+                    } else if (fieldNameLower.includes("address_country") || (fieldNameLower.includes("country") && fieldNameLower.includes("address"))) {
+                      addressData.address_country = String(value)
+                    } else if (fieldNameLower.includes("delivery")) {
+                      addressData.delivery = Boolean(value)
+                    } else if (fieldNameLower.includes("document")) {
+                      addressData.document = Boolean(value)
+                    } else if (fieldNameLower.includes("pay") && !fieldNameLower.includes("payment")) {
+                      addressData.pay = Boolean(value)
+                    } else if (fieldNameLower.includes("visit")) {
+                      addressData.visit = Boolean(value)
+                    }
+                  }
+                })
+                
+                // Only add if we have at least address_line_1 and it's not a duplicate
+                if (addressData.address_line_1) {
+                  const addressId = addressData.id || `temp-${Date.now()}-${Math.random()}`
+                  if (!loadedAddressIds.has(addressId)) {
+                    loadedAddresses.push(addressData)
+                    loadedAddressIds.add(addressId)
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        // PRIORITY 3: Fallback - Check flat structure for single address (backward compatibility)
+        // Only use this if no addresses were loaded from domain_tables or steps structure
+        if (loadedAddresses.length === 0 && existingRecord.address_line_1) {
+          console.log(`🔍 [PRIORITY 3] Loading single address from flat structure (backward compatibility)`)
+          const addressId = existingRecord.id || `temp-flat-${Date.now()}`
+          if (!loadedAddressIds.has(addressId)) {
+            loadedAddresses.push({
+              id: existingRecord.id,
+              company_id: existingRecord.company_id || companyId?.toString(),
+              workflow_id: workflowId,
+              workflow_instance_id: existingRecord.workflow_instance_id || workflowInstanceId,
+              step_id: null,
+              address_line_1: existingRecord.address_line_1,
+              address_line_2: existingRecord.address_line_2,
+              city: existingRecord.city,
+              state_province: existingRecord.state_province,
+              pincode: existingRecord.pincode,
+              county: existingRecord.county,
+              address_country: existingRecord.address_country,
+              delivery: existingRecord.delivery || false,
+              document: existingRecord.document || false,
+              pay: existingRecord.pay || false,
+              visit: existingRecord.visit || false,
+            })
+            loadedAddressIds.add(addressId)
+          }
+        }
+        
+        if (loadedAddresses.length > 0) {
+          setAddresses(loadedAddresses)
+          console.log(`✅ Loaded ${loadedAddresses.length} address(es) from API response`)
+        }
+      }
+
       // Mark steps as completed if they have data
       const completedStepsSet = new Set<number>()
       workflow.steps.forEach((step, stepIndex) => {
@@ -1317,7 +1537,11 @@ export function DynamicCompanyWizard({
           const value = existingFormData[field.id]
           return value !== undefined && value !== null && value !== ""
         })
-        if (stepHasData) {
+        // For address step, also check if addresses array has data
+        const isAddressStep = stepIndex === 1 || step.name?.toLowerCase().includes("address")
+        if (isAddressStep && addresses && addresses.length > 0) {
+          completedStepsSet.add(stepIndex)
+        } else if (stepHasData) {
           completedStepsSet.add(stepIndex)
         }
       })
@@ -1463,7 +1687,52 @@ export function DynamicCompanyWizard({
     )
   }
 
+  // Helper function to get country options from Step 1 (General Information)
+  const getCountryOptions = (): string[] => {
+    if (!workflow || workflow.steps.length === 0) return []
+    const generalInfoStep = workflow.steps[0]
+    const countryField = generalInfoStep?.fields?.find(f => 
+      f.label?.toLowerCase().includes("country") && 
+      !f.label?.toLowerCase().includes("address")
+    )
+    if (countryField && countryField.options && Array.isArray(countryField.options)) {
+      return countryField.options
+    }
+    // Fallback: get from formData if available
+    const countryValue = formData[countryField?.id || ""]
+    if (countryValue && typeof countryValue === "string") {
+      return [countryValue]
+    }
+    return []
+  }
+
+  // Helper function to get county options (same as country for now)
+  const getCountyOptions = (): string[] => {
+    return getCountryOptions()
+  }
+
+  // Get workflow instance ID if available
+  const workflowInstanceId = formData.workflow_instance_id || null
+
   const currentStepData = workflow.steps[currentStep]
+  
+  // Check if this is the address step - use AddressStepTable
+  const isAddressStep = 
+    currentStep === 1 || 
+    currentStepData.name?.toLowerCase().includes("address") ||
+    currentStepData.name?.toLowerCase() === "addresses" ||
+    currentStepData.id?.toLowerCase().includes("address")
+  
+  // Debug logging
+  if (currentStep === 1 || currentStepData.name?.toLowerCase().includes("address")) {
+    console.log("🔍 Address Step Detection:", {
+      currentStep,
+      stepName: currentStepData.name,
+      stepId: currentStepData.id,
+      isAddressStep,
+      addressesCount: addresses?.length || 0
+    })
+  }
 
   if (!currentStepData) {
     console.error(
@@ -1487,6 +1756,13 @@ export function DynamicCompanyWizard({
   const progress = (validatedSteps.size / workflow.steps.length) * 100
 
   const isCurrentStepValid = () => {
+    // For address step, check if at least one address exists
+    const isAddressStep = currentStep === 1 || currentStepData.name?.toLowerCase().includes("address")
+    if (isAddressStep) {
+      return addresses && addresses.length > 0
+    }
+    
+    // For other steps, validate required fields normally
     const requiredFields = (currentStepData.fields || []).filter((field) => field.required)
     return requiredFields.every((field) => {
       const value = formData[field.id]
@@ -1496,7 +1772,39 @@ export function DynamicCompanyWizard({
   }
 
   const validateStep = () => {
-    // Frontend validation only - no API calls
+    // For address step, validate addresses array
+    const isAddressStep = currentStep === 1 || currentStepData.name?.toLowerCase().includes("address")
+    if (isAddressStep) {
+      const addressErrors: Record<string, string> = {}
+      
+      if (!addresses || addresses.length === 0) {
+        addressErrors["addresses_required"] = "At least one address is required"
+      } else {
+        // Validate each address
+        addresses.forEach((address, index) => {
+          if (!address.address_line_1 || address.address_line_1.trim() === "") {
+            addressErrors[`address_${index}_address_line_1`] = "Address Line 1 is required"
+          }
+          if (!address.city || address.city.trim() === "") {
+            addressErrors[`address_${index}_city`] = "City is required"
+          }
+          if (!address.state_province || address.state_province.trim() === "") {
+            addressErrors[`address_${index}_state_province`] = "State/Province is required"
+          }
+          if (!address.pincode || address.pincode.trim() === "") {
+            addressErrors[`address_${index}_pincode`] = "Pincode is required"
+          }
+          if (!address.address_country || address.address_country.trim() === "") {
+            addressErrors[`address_${index}_address_country`] = "Address Country is required"
+          }
+        })
+      }
+      
+      setErrors(addressErrors)
+      return Object.keys(addressErrors).length === 0
+    }
+    
+    // For other steps, use normal validation
     const newErrors = validateStepUtil(
       currentStepData.fields || [],
       formData
@@ -1534,39 +1842,64 @@ export function DynamicCompanyWizard({
         const companyIdValue = currentCompany.id
         // Only include if it looks like a UUID (contains hyphens) or is a valid UUID format
         if (typeof companyIdValue === 'string' && companyIdValue.includes('-')) {
-          stepData.company_id = companyIdValue
+          stepData.company_id = companyIdValue as string
         }
-      } else if (companyId && typeof companyId === 'string' && companyId.includes('-')) {
+      } else if (
+        typeof companyId === 'string' &&
+        (companyId as string).includes('-')
+      ) {
         // Only include if it's a valid UUID format
-        stepData.company_id = companyId
+        stepData.company_id = companyId as string
       }
-      // If no valid company_id, omit it - backend will generate UUID
+          // If no valid company_id, omit it - backend will generate UUID
 
       const stepFieldMap: Record<string, string> = {} // fieldId -> fieldName
+      
+      // Check if this is the address step - format addresses from addresses state
+      const isAddressStep = currentStep === 1 || currentStepData.name?.toLowerCase().includes("address")
+      
+      if (isAddressStep && addresses && addresses.length > 0) {
+        // Format addresses as array-indexed fields for step validation
+        addresses.forEach((address, index) => {
+          if (address.address_line_1) stepData[`address_${index}_address_line_1`] = address.address_line_1
+          if (address.address_line_2) stepData[`address_${index}_address_line_2`] = address.address_line_2
+          if (address.city) stepData[`address_${index}_city`] = address.city
+          if (address.state_province) stepData[`address_${index}_state_province`] = address.state_province
+          if (address.pincode) stepData[`address_${index}_pincode`] = address.pincode
+          if (address.county) stepData[`address_${index}_county`] = address.county
+          if (address.address_country) stepData[`address_${index}_address_country`] = address.address_country
+          if (address.delivery !== undefined) stepData[`address_${index}_delivery`] = address.delivery
+          if (address.document !== undefined) stepData[`address_${index}_document`] = address.document
+          if (address.pay !== undefined) stepData[`address_${index}_pay`] = address.pay
+          if (address.visit !== undefined) stepData[`address_${index}_visit`] = address.visit
+        })
+        console.log(`📮 Step validation: Formatted ${addresses.length} address(es) as array-indexed fields`)
+      } else {
+        // Non-address step or no addresses - normal field mapping
+        currentStepData.fields.forEach((field) => {
+          const value = formData[field.id]
 
-      currentStepData.fields.forEach((field) => {
-        const value = formData[field.id]
+          const hasValue = value !== undefined && value !== null && value !== ""
+          if (!hasValue) return
 
-        const hasValue = value !== undefined && value !== null && value !== ""
-        if (!hasValue) return
+          // Use a readable snake_case key derived from the label.
+          // Example: "Company Name" -> "company_name"
+          const labelKey =
+            field.label
+              ?.toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "") || ""
 
-        // Use a readable snake_case key derived from the label.
-        // Example: "Company Name" -> "company_name"
-        const labelKey =
-          field.label
-            ?.toLowerCase()
-            .replace(/[^a-z0-9]+/g, "_")
-            .replace(/^_+|_+$/g, "") || ""
-
-        if (labelKey) {
-          stepData[labelKey] = value
-          stepFieldMap[field.id] = labelKey
-        } else {
-          // Fallback: if label is missing for some reason, use field.id (rare)
-          stepData[field.id] = value
-          stepFieldMap[field.id] = field.id
-        }
-      })
+          if (labelKey) {
+            stepData[labelKey] = value
+            stepFieldMap[field.id] = labelKey
+          } else {
+            // Fallback: if label is missing for some reason, use field.id (rare)
+            stepData[field.id] = value
+            stepFieldMap[field.id] = field.id
+          }
+        })
+      }
 
       console.log(`🔍 Step ${currentStep + 1} API validation payload:`, {
         stepName: currentStepData.name,
@@ -1603,32 +1936,51 @@ export function DynamicCompanyWizard({
             .replace(/[^a-z0-9]+/g, "_")
             .replace(/^_+|_+$/g, "")
 
-          currentStepData.fields.forEach((field) => {
-            const fieldName = (field as any).name
-            const fieldLabel = field.label || ""
-            const fieldNameNorm = (fieldName || "")
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "_")
-              .replace(/^_+|_+$/g, "")
-            const fieldLabelNorm = fieldLabel
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "_")
-              .replace(/^_+|_+$/g, "")
-
-            // Match by field.name, snake_case(field.label), or direct ID/label
-            const matches =
-              error.field_name === fieldName ||
-              errorFieldNameNorm === fieldNameNorm ||
-              errorFieldNameNorm === fieldLabelNorm ||
-              error.field_name === field.id ||
-              error.field_label === field.label
-
-            if (matches) {
-              stepApiErrors[field.id] = error.error_message
-              stepErrorFieldIds.add(field.id)
-              stepErrorMessages.push(`${field.label || field.id}: ${error.error_message}`)
+          // Check if error is for an array-indexed address field
+          const isArrayIndexedError = /^address_\d+_/.test(error.field_name)
+          
+          if (isArrayIndexedError && isAddressStep && addresses && addresses.length > 0) {
+            // Parse array-indexed error: address_0_city -> index 0, field "city"
+            const match = error.field_name.match(/^address_(\d+)_(.+)$/)
+            if (match) {
+              const addressIndex = parseInt(match[1], 10)
+              const baseFieldName = match[2]
+              
+              // Map to array-indexed key for AddressStepTable
+              const arrayIndexedKey = `address_${addressIndex}_${baseFieldName}`
+              stepApiErrors[arrayIndexedKey] = error.error_message
+              stepErrorFieldIds.add(arrayIndexedKey)
+              stepErrorMessages.push(`Address ${addressIndex + 1} - ${error.field_label || baseFieldName}: ${error.error_message}`)
             }
-          })
+          } else {
+            // Non-address field or regular field error
+            currentStepData.fields.forEach((field) => {
+              const fieldName = (field as any).name
+              const fieldLabel = field.label || ""
+              const fieldNameNorm = (fieldName || "")
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "_")
+                .replace(/^_+|_+$/g, "")
+              const fieldLabelNorm = fieldLabel
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "_")
+                .replace(/^_+|_+$/g, "")
+
+              // Match by field.name, snake_case(field.label), or direct ID/label
+              const matches =
+                error.field_name === fieldName ||
+                errorFieldNameNorm === fieldNameNorm ||
+                errorFieldNameNorm === fieldLabelNorm ||
+                error.field_name === field.id ||
+                error.field_label === field.label
+
+              if (matches) {
+                stepApiErrors[field.id] = error.error_message
+                stepErrorFieldIds.add(field.id)
+                stepErrorMessages.push(`${field.label || field.id}: ${error.error_message}`)
+              }
+            })
+          }
         })
 
         // Merge step errors into global API error state
@@ -1750,18 +2102,51 @@ export function DynamicCompanyWizard({
         if (typeof companyIdValue === 'string' && companyIdValue.includes('-')) {
           completeData.company_id = companyIdValue
         }
-      } else if (companyId && typeof companyId === 'string' && companyId.includes('-')) {
+      } else if (
+        companyId &&
+        typeof companyId === 'string' &&
+        (companyId as string).includes('-')
+      ) {
         // Only include if it's a valid UUID format
         completeData.company_id = companyId
       }
-      // If no valid company_id, omit it - backend will generate UUID
+          // If no valid company_id, omit it - backend will generate UUID
 
       // Map all form data to field names
       // The API expects field_name (actual column names like "company_name", "address_line_1") as keys
       // NOT UUIDs (field.id). The field.name property contains the field_name from the backend.
       const fieldMapping: Record<string, { fieldId: string; fieldName: string; value: any; label: string }> = {}
       
-      workflow.steps.forEach((step) => {
+      // Helper function to check if a field is an address field
+      const isAddressField = (fieldLabel: string): boolean => {
+        const labelLower = (fieldLabel || "").toLowerCase()
+        const addressKeywords = [
+          "address_line_1", "address_line_2", "city", "state_province",
+          "pincode", "postal_code", "address_country", "county",
+          "delivery", "document", "pay", "visit"
+        ]
+        return addressKeywords.some(keyword => labelLower.includes(keyword))
+      }
+      
+      // Helper function to check if a key is already array-indexed
+      const isArrayIndexed = (key: string): boolean => {
+        // Pattern: {prefix}_{digit}_{field_name}
+        const pattern = /^[a-zA-Z_]+_\d+_.+$/
+        return pattern.test(key)
+      }
+      
+      // First pass: Check if formData already contains array-indexed address fields
+      // This handles cases where addresses are pre-formatted (e.g., from AddressStepTable component)
+      const hasArrayIndexedAddresses = Object.keys(formData).some(key => 
+        isArrayIndexed(key) && key.startsWith("address_")
+      )
+      
+      // Track address fields for special handling
+      const addressFieldsByIndex: Record<number, Record<string, any>> = {}
+      
+      workflow.steps.forEach((step, stepIndex) => {
+        const isAddressStep = stepIndex === 1 || step.name?.toLowerCase().includes("address")
+        
         step.fields.forEach((field) => {
           const value = formData[field.id]
           
@@ -1769,43 +2154,174 @@ export function DynamicCompanyWizard({
           // Only exclude: undefined, null, and empty strings
           const hasValue = value !== undefined && value !== null && value !== ""
           
-          if (hasValue) {
-            // Use a readable snake_case key derived from the label as the primary key.
-            const labelKey =
-              field.label
-                ?.toLowerCase()
-                .replace(/[^a-z0-9]+/g, "_")
-                .replace(/^_+|_+$/g, "") || ""
+          if (!hasValue) {
+            if (field.required) {
+              // Log missing required fields for debugging
+              const formDataValue = formData[field.id]
+              console.warn(`⚠️ Required field "${field.label}" is missing value:`, {
+                value: formDataValue,
+                type: typeof formDataValue,
+                isEmpty: formDataValue === "",
+                isNull: formDataValue === null,
+                isUndefined: formDataValue === undefined,
+                fieldId: field.id,
+                formDataKey: field.id,
+                hasValueInFormData: formData[field.id] !== undefined,
+                allFormDataKeys: Object.keys(formData).filter(k => 
+                  k.toLowerCase().includes(field.label.toLowerCase().substring(0, 5)) ||
+                  field.label.toLowerCase().includes(k.toLowerCase().substring(0, 5))
+                )
+              })
+            }
+            return
+          }
+          
+          // Use a readable snake_case key derived from the label as the primary key
+          const labelKey =
+            field.label
+              ?.toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_+|_+$/g, "") || ""
 
-            const payloadKey = labelKey || field.id
-
+          const payloadKey = labelKey || field.id
+          
+          // Check if this is an address field
+          if (isAddressStep && isAddressField(field.label || "")) {
+            // Check if formData already has array-indexed keys for this field
+            // Look for keys like "address_0_address_line_1", "address_1_city", etc.
+            let foundArrayIndexed = false
+            
+            if (hasArrayIndexedAddresses) {
+              // Find matching array-indexed key in formData
+              const matchingKey = Object.keys(formData).find(k => {
+                if (!isArrayIndexed(k) || !k.startsWith("address_")) return false
+                // Check if this key ends with the field name (e.g., "address_0_address_line_1" ends with "address_line_1")
+                const keyParts = k.split("_")
+                const fieldParts = payloadKey.split("_")
+                // Match if last parts of key match field name
+                return keyParts.slice(-fieldParts.length).join("_") === payloadKey ||
+                       k.endsWith(`_${payloadKey}`)
+              })
+              
+              if (matchingKey) {
+                // Use the array-indexed key directly from formData
+                completeData[matchingKey] = formData[matchingKey] || value
+                fieldMapping[matchingKey] = {
+                  fieldId: field.id,
+                  fieldName: payloadKey,
+                  value: formData[matchingKey] || value,
+                  label: field.label
+                }
+                foundArrayIndexed = true
+                
+                // Extract index for tracking
+                const match = matchingKey.match(/^address_(\d+)_/)
+                if (match) {
+                  const index = parseInt(match[1], 10)
+                  if (!addressFieldsByIndex[index]) {
+                    addressFieldsByIndex[index] = {}
+                  }
+                  addressFieldsByIndex[index][payloadKey] = formData[matchingKey] || value
+                }
+              }
+            }
+            
+            if (!foundArrayIndexed) {
+              // Single address (backward compatibility) - treat as index 0
+              // Format as array-indexed for consistency (address_0_*)
+              const arrayIndexedKey = `address_0_${payloadKey}`
+              completeData[arrayIndexedKey] = value
+              fieldMapping[arrayIndexedKey] = {
+                fieldId: field.id,
+                fieldName: payloadKey,
+                value: value,
+                label: field.label
+              }
+              
+              if (!addressFieldsByIndex[0]) {
+                addressFieldsByIndex[0] = {}
+              }
+              addressFieldsByIndex[0][payloadKey] = value
+            }
+          } else {
+            // Non-address field - normal handling
             completeData[payloadKey] = value
             fieldMapping[payloadKey] = {
               fieldId: field.id,
-              fieldName: labelKey || 'N/A',
+              fieldName: payloadKey,
               value: value,
               label: field.label
             }
-          } else if (field.required) {
-            // Log missing required fields for debugging - check if it's in formData but empty
-            const formDataValue = formData[field.id]
-            console.warn(`⚠️ Required field "${field.label}" is missing value:`, {
-              value: formDataValue,
-              type: typeof formDataValue,
-              isEmpty: formDataValue === "",
-              isNull: formDataValue === null,
-              isUndefined: formDataValue === undefined,
-              fieldId: field.id,
-              formDataKey: field.id,
-              hasValueInFormData: formData[field.id] !== undefined,
-              allFormDataKeys: Object.keys(formData).filter(k => 
-                k.toLowerCase().includes(field.label.toLowerCase().substring(0, 5)) ||
-                field.label.toLowerCase().includes(k.toLowerCase().substring(0, 5))
-              )
-            })
           }
         })
       })
+      
+      // NEW: Format addresses from addresses state array (from AddressStepTable)
+      // This is the primary source for multiple addresses
+      // CRITICAL: Always send ALL addresses, even if some fields are empty
+      if (addresses && addresses.length > 0) {
+        console.log(`🔍 Formatting ${addresses.length} address(es) for submission...`)
+        addresses.forEach((address, index) => {
+          console.log(`🔍 Formatting address ${index}:`, {
+            address_line_1: address.address_line_1,
+            city: address.city,
+            state_province: address.state_province,
+            pincode: address.pincode,
+            address_country: address.address_country
+          })
+          
+          // Format each address field as array-indexed
+          // IMPORTANT: Send ALL fields, even if empty, to ensure backend receives complete data
+          completeData[`address_${index}_address_line_1`] = address.address_line_1 || ""
+          completeData[`address_${index}_address_line_2`] = address.address_line_2 || ""
+          completeData[`address_${index}_city`] = address.city || ""
+          completeData[`address_${index}_state_province`] = address.state_province || ""
+          completeData[`address_${index}_pincode`] = address.pincode || ""
+          completeData[`address_${index}_county`] = address.county || ""
+          completeData[`address_${index}_address_country`] = address.address_country || ""
+          completeData[`address_${index}_delivery`] = address.delivery !== undefined ? address.delivery : false
+          completeData[`address_${index}_document`] = address.document !== undefined ? address.document : false
+          completeData[`address_${index}_pay`] = address.pay !== undefined ? address.pay : false
+          completeData[`address_${index}_visit`] = address.visit !== undefined ? address.visit : false
+          
+          // Track for logging
+          if (!addressFieldsByIndex[index]) {
+            addressFieldsByIndex[index] = {}
+          }
+          Object.entries(address).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== "" && key !== "id" && key !== "company_id" && key !== "workflow_id" && key !== "workflow_instance_id" && key !== "step_id") {
+              addressFieldsByIndex[index][key] = value
+            }
+          })
+        })
+        console.log(`📮 Formatted ${addresses.length} address(es) from AddressStepTable component`)
+      }
+      
+      // Also include any array-indexed address fields that might be in formData but not in workflow fields
+      // This handles cases where addresses are added dynamically (backward compatibility)
+      if (hasArrayIndexedAddresses) {
+        Object.keys(formData).forEach(key => {
+          if (isArrayIndexed(key) && key.startsWith("address_") && !completeData.hasOwnProperty(key)) {
+            completeData[key] = formData[key]
+            // Extract index for tracking
+            const match = key.match(/^address_(\d+)_(.+)$/)
+            if (match) {
+              const index = parseInt(match[1], 10)
+              const fieldName = match[2]
+              if (!addressFieldsByIndex[index]) {
+                addressFieldsByIndex[index] = {}
+              }
+              addressFieldsByIndex[index][fieldName] = formData[key]
+            }
+          }
+        })
+      }
+      
+      // Log address detection for debugging
+      if (Object.keys(addressFieldsByIndex).length > 0) {
+        console.log(`📮 Detected ${Object.keys(addressFieldsByIndex).length} address(es) to send:`, 
+          Object.keys(addressFieldsByIndex).map(idx => `Address ${idx}: ${Object.keys(addressFieldsByIndex[parseInt(idx)]).length} fields`))
+      }
       
       // Log field mappings for debugging
       console.log("🔍 Field Value Mapping:", {
@@ -2163,22 +2679,7 @@ export function DynamicCompanyWizard({
         
         // Debug Country field specifically
         const isCountryField = field.label?.toLowerCase().includes("country")
-        if (isCountryField) {
-          console.log(`🌍 Rendering Country Select:`, {
-            fieldId: field.id,
-            fieldLabel: field.label,
-            rawValue: value,
-            selectValue: selectValue,
-            options: field.options,
-            formDataValue: formData[field.id],
-            typeofValue: typeof value,
-            isEmpty: !value || value === "",
-            hasOptions: field.options && field.options.length > 0
-          })
-          
-          // Note: Empty values are normal for unfilled fields and will be filtered out in payload building
-        }
-        
+                
         if (selectValue && field.options && field.options.length > 0) {
           // Try to find exact match first
           const exactMatch = field.options.find(opt => opt === selectValue)
@@ -2220,10 +2721,6 @@ export function DynamicCompanyWizard({
                 }
               }
             }
-          }
-        } else {
-          if (isCountryField) {
-            console.log(`⚠️ Country Select has no value or no options. Value: "${selectValue}", Options:`, field.options)
           }
         }
         
@@ -2548,33 +3045,51 @@ export function DynamicCompanyWizard({
                       )}
                     </div>
 
-                    <div className="grid gap-5 md:grid-cols-12">
-                      {(step.fields || []).map((field) => {
-                        const widthClass =
-                          field.layout?.width === "half"
-                            ? "md:col-span-6"
-                            : field.layout?.width === "third"
-                              ? "md:col-span-4"
-                              : "md:col-span-12"
+                    {/* Check if this is the address step - use AddressStepTable */}
+                    {(index === 1 || step.name?.toLowerCase().includes("address")) ? (
+                      <AddressStepTable
+                        companyId={companyId?.toString()}
+                        workflowId={workflowId}
+                        workflowInstanceId={workflowInstanceId || null}
+                        stepId={step.id}
+                        addresses={addresses}
+                        onAddressesChange={setAddresses}
+                        isCreateMode={!recordId}
+                        countryOptions={getCountryOptions()}
+                        countyOptions={getCountyOptions()}
+                        validationErrors={errors}
+                        apiValidationErrors={apiValidationErrors}
+                        workflowFields={step.fields || []}
+                      />
+                    ) : (
+                      <div className="grid gap-5 md:grid-cols-12">
+                        {(step.fields || []).map((field) => {
+                          const widthClass =
+                            field.layout?.width === "half"
+                              ? "md:col-span-6"
+                              : field.layout?.width === "third"
+                                ? "md:col-span-4"
+                                : "md:col-span-12"
 
-                        return (
-                          <div key={field.id} className={`space-y-2 ${widthClass}`}>
-                            {field.type !== "checkbox" && field.type !== "switch" && (
-                              <Label htmlFor={field.id} className="text-base font-semibold">
-                                {field.label}
-                                {field.required && <span className="text-red-500 ml-1">*</span>}
-                              </Label>
-                            )}
-                            {renderField(field)}
-                            {(errors[field.id] || apiValidationErrors[field.id]) && (
-                              <p className="text-sm text-red-600 font-medium">
-                                {errors[field.id] || apiValidationErrors[field.id]}
-                              </p>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
+                          return (
+                            <div key={field.id} className={`space-y-2 ${widthClass}`}>
+                              {field.type !== "checkbox" && field.type !== "switch" && (
+                                <Label htmlFor={field.id} className="text-base font-semibold">
+                                  {field.label}
+                                  {field.required && <span className="text-red-500 ml-1">*</span>}
+                                </Label>
+                              )}
+                              {renderField(field)}
+                              {(errors[field.id] || apiValidationErrors[field.id]) && (
+                                <p className="text-sm text-red-600 font-medium">
+                                  {errors[field.id] || apiValidationErrors[field.id]}
+                                </p>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -2700,33 +3215,57 @@ export function DynamicCompanyWizard({
               )}
             </div>
 
-            <div className="grid gap-5 md:grid-cols-12">
-              {(currentStepData.fields || []).map((field) => {
-                const widthClass =
-                  field.layout?.width === "half"
-                    ? "md:col-span-6"
-                    : field.layout?.width === "third"
-                      ? "md:col-span-4"
-                      : "md:col-span-12"
+            {/* Check if this is the address step - use AddressStepTable */}
+            {isAddressStep ? (
+              <>
+                {console.log("✅ Rendering AddressStepTable component - isAddressStep:", isAddressStep)}
+                <AddressStepTable
+                  companyId={companyId?.toString()}
+                  workflowId={workflowId}
+                  workflowInstanceId={workflowInstanceId || null}
+                  stepId={currentStepData.id}
+                  addresses={addresses}
+                  onAddressesChange={setAddresses}
+                  isCreateMode={!recordId}
+                  countryOptions={getCountryOptions()}
+                  countyOptions={getCountyOptions()}
+                  validationErrors={errors}
+                  apiValidationErrors={apiValidationErrors}
+                  workflowFields={currentStepData.fields || []}
+                />
+              </>
+            ) : (
+              <>
+                {console.log("❌ Rendering regular form fields - isAddressStep:", isAddressStep)}
+                <div className="grid gap-5 md:grid-cols-12">
+                  {(currentStepData.fields || []).map((field) => {
+                    const widthClass =
+                      field.layout?.width === "half"
+                        ? "md:col-span-6"
+                        : field.layout?.width === "third"
+                          ? "md:col-span-4"
+                          : "md:col-span-12"
 
-                return (
-                  <div key={field.id} className={`space-y-2 ${widthClass}`}>
-                    {field.type !== "checkbox" && field.type !== "switch" && (
-                      <Label htmlFor={field.id} className="text-base font-semibold">
-                        {field.label}
-                        {field.required && <span className="text-red-500 ml-1">*</span>}
-                      </Label>
-                    )}
-                    {renderField(field)}
-                    {(errors[field.id] || apiValidationErrors[field.id]) && (
-                      <p className="text-sm text-red-600 font-medium">
-                        {errors[field.id] || apiValidationErrors[field.id]}
-                      </p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+                    return (
+                      <div key={field.id} className={`space-y-2 ${widthClass}`}>
+                        {field.type !== "checkbox" && field.type !== "switch" && (
+                          <Label htmlFor={field.id} className="text-base font-semibold">
+                            {field.label}
+                            {field.required && <span className="text-red-500 ml-1">*</span>}
+                          </Label>
+                        )}
+                        {renderField(field)}
+                        {(errors[field.id] || apiValidationErrors[field.id]) && (
+                          <p className="text-sm text-red-600 font-medium">
+                            {errors[field.id] || apiValidationErrors[field.id]}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
