@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ArrowLeft, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 import { dynamicWorkflowAPI } from "@/lib/api/services/dynamic-workflow-api.service"
 import type { WorkflowTableDataResponse } from "@/lib/api/types/dynamic-workflow.types"
@@ -268,57 +269,141 @@ export function WorkflowDataViewPage({
                     </div>
                   </CardHeader>
                   <CardContent className="pt-6">
-                    {step.fields && Object.keys(step.fields).length > 0 ? (
-                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {Object.entries(step.fields)
-                          .sort(([, a]: [string, any], [, b]: [string, any]) => {
-                            const orderA = a.field_order || 0
-                            const orderB = b.field_order || 0
-                            return orderA - orderB
-                          })
-                          .map(([fieldName, fieldData]: [string, any]) => (
-                            <div
-                              key={fieldName}
-                              className="group space-y-2 p-5 rounded-lg border-2 bg-card hover:border-primary/50 hover:shadow-md transition-all duration-200"
-                            >
-                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                                {fieldData.field_label || fieldName}
-                                {fieldData.is_required && (
-                                  <span className="text-destructive text-xs">*</span>
-                                )}
-                              </label>
-                              <p className="text-base font-semibold text-foreground break-words">
-                                {fieldData.value !== undefined &&
-                                fieldData.value !== null &&
-                                fieldData.value !== "" ? (
-                                  <span className="text-foreground">
-                                    {typeof fieldData.value === "boolean"
-                                      ? fieldData.value
-                                        ? (
-                                            <Badge variant="default" className="bg-green-600">
-                                              Yes
-                                            </Badge>
-                                          )
-                                        : (
-                                            <Badge variant="secondary">
-                                              No
-                                            </Badge>
-                                          )
-                                      : String(fieldData.value)}
-                                  </span>
-                                ) : (
-                                  <span className="text-muted-foreground italic font-normal">Not provided</span>
-                                )}
-                              </p>
-                            </div>
-                          ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-16 text-muted-foreground">
-                        <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                        <p className="text-sm font-medium">No fields defined for this step</p>
-                      </div>
-                    )}
+                    {/* Check if this is an address step with records array (multiple addresses) */}
+                    {(() => {
+                      const isAddressStep = step.step_name?.toLowerCase().includes("address") || step.step_order === 2
+                      const hasRecords = Array.isArray(step.records) && step.records.length > 0
+                      
+                      if (isAddressStep && hasRecords) {
+                        // Render multiple addresses in table format
+                        console.log(`🔍 [WorkflowDataViewPage] Rendering ${step.records.length} address(es) in table format`)
+                        return (
+                          <div className="space-y-4">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-12">Sr.</TableHead>
+                                  <TableHead>Address Line 1</TableHead>
+                                  <TableHead>City</TableHead>
+                                  <TableHead>State/Province</TableHead>
+                                  <TableHead>Pincode</TableHead>
+                                  <TableHead>Country</TableHead>
+                                  <TableHead>Type</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {step.records.map((record: any, index: number) => {
+                                  // Extract field values from record (record contains field objects with value property)
+                                  const extractFieldValue = (fieldKey: string) => {
+                                    const fieldObj = record[fieldKey]
+                                    if (fieldObj && typeof fieldObj === 'object' && fieldObj !== null && 'value' in fieldObj) {
+                                      return fieldObj.value
+                                    }
+                                    return record[fieldKey] !== undefined ? record[fieldKey] : null
+                                  }
+                                  
+                                  const addressLine1 = extractFieldValue('address_line_1')
+                                  const city = extractFieldValue('city')
+                                  const stateProvince = extractFieldValue('state_province')
+                                  const pincode = extractFieldValue('pincode')
+                                  const country = extractFieldValue('address_country')
+                                  const delivery = extractFieldValue('delivery')
+                                  const document = extractFieldValue('document')
+                                  const pay = extractFieldValue('pay')
+                                  const visit = extractFieldValue('visit')
+                                  
+                                  // Build address type flags
+                                  const addressTypes = []
+                                  if (delivery) addressTypes.push('Delivery')
+                                  if (document) addressTypes.push('Document')
+                                  if (pay) addressTypes.push('Pay')
+                                  if (visit) addressTypes.push('Visit')
+                                  
+                                  return (
+                                    <TableRow key={record.id || `address-${index}`}>
+                                      <TableCell>{index + 1}</TableCell>
+                                      <TableCell>{addressLine1 || "-"}</TableCell>
+                                      <TableCell>{city || "-"}</TableCell>
+                                      <TableCell>{stateProvince || "-"}</TableCell>
+                                      <TableCell>{pincode || "-"}</TableCell>
+                                      <TableCell>{country || "-"}</TableCell>
+                                      <TableCell>
+                                        {addressTypes.length > 0 ? (
+                                          <div className="flex flex-wrap gap-1">
+                                            {addressTypes.map((type, i) => (
+                                              <Badge key={i} variant="secondary" className="text-xs">
+                                                {type}
+                                              </Badge>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          "-"
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  )
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )
+                      } else if (step.fields && Object.keys(step.fields).length > 0) {
+                        // Render single address or other step fields (backward compatibility)
+                        return (
+                          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            {Object.entries(step.fields)
+                              .sort(([, a]: [string, any], [, b]: [string, any]) => {
+                                const orderA = a.field_order || 0
+                                const orderB = b.field_order || 0
+                                return orderA - orderB
+                              })
+                              .map(([fieldName, fieldData]: [string, any]) => (
+                                <div
+                                  key={fieldName}
+                                  className="group space-y-2 p-5 rounded-lg border-2 bg-card hover:border-primary/50 hover:shadow-md transition-all duration-200"
+                                >
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                    {fieldData.field_label || fieldName}
+                                    {fieldData.is_required && (
+                                      <span className="text-destructive text-xs">*</span>
+                                    )}
+                                  </label>
+                                  <p className="text-base font-semibold text-foreground break-words">
+                                    {fieldData.value !== undefined &&
+                                    fieldData.value !== null &&
+                                    fieldData.value !== "" ? (
+                                      <span className="text-foreground">
+                                        {typeof fieldData.value === "boolean"
+                                          ? fieldData.value
+                                            ? (
+                                                <Badge variant="default" className="bg-green-600">
+                                                  Yes
+                                                </Badge>
+                                              )
+                                            : (
+                                                <Badge variant="secondary">
+                                                  No
+                                                </Badge>
+                                              )
+                                          : String(fieldData.value)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground italic font-normal">Not provided</span>
+                                    )}
+                                  </p>
+                                </div>
+                              ))}
+                          </div>
+                        )
+                      } else {
+                        return (
+                          <div className="text-center py-16 text-muted-foreground">
+                            <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                            <p className="text-sm font-medium">No fields defined for this step</p>
+                          </div>
+                        )
+                      }
+                    })()}
                   </CardContent>
                 </Card>
               </TabsContent>

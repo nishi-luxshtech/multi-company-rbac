@@ -1404,8 +1404,9 @@ export function DynamicCompanyWizard({
         }
         
         // PRIORITY 2: Check if addresses are in steps structure (alternative format, backward compatibility)
-        // Only check if no addresses were loaded from domain_tables
-        if (loadedAddresses.length === 0 && existingRecord.steps && Array.isArray(existingRecord.steps)) {
+        // ALWAYS check steps structure for records array (NEW FORMAT) - this takes precedence for multiple addresses
+        // Only fall back to fields object if records array doesn't exist
+        if (existingRecord.steps && Array.isArray(existingRecord.steps)) {
           const addressStep = existingRecord.steps.find((step: any) => 
             step.name?.toLowerCase().includes("address") || 
             step.step_name?.toLowerCase().includes("address") ||
@@ -1413,35 +1414,82 @@ export function DynamicCompanyWizard({
           )
           
           if (addressStep) {
-            // Check if step has multiple address records (domain table returns array)
+            // PRIORITY 2A: Check if step has records array (NEW FORMAT - multiple addresses)
+            // This is the new format where address steps have a records array
+            // ALWAYS check this first, even if addresses were loaded from Priority 1 (records array takes precedence)
             if (Array.isArray(addressStep.records) && addressStep.records.length > 0) {
-              // Multiple addresses from domain table
-              console.log(`🔍 [PRIORITY 2] Found ${addressStep.records.length} address(es) in steps structure`)
-              addressStep.records.forEach((record: any) => {
-                const addressId = record.id || `temp-${Date.now()}-${Math.random()}`
+              // Multiple addresses from domain table (NEW FORMAT)
+              console.log(`🔍 [PRIORITY 2A] Found ${addressStep.records.length} address(es) in steps[].records array (new format)`)
+              console.log(`🔍 [PRIORITY 2A] Sample record structure:`, addressStep.records[0])
+              
+              // Clear any previously loaded addresses from Priority 1 if records array exists (records array takes precedence)
+              if (loadedAddresses.length > 0) {
+                console.log(`🔍 [PRIORITY 2A] Clearing ${loadedAddresses.length} previously loaded address(es) - records array takes precedence`)
+                loadedAddresses.length = 0
+                loadedAddressIds.clear()
+              }
+              
+              addressStep.records.forEach((record: any, idx: number) => {
+                const addressId = record.id || `temp-${Date.now()}-${idx}`
                 if (!loadedAddressIds.has(addressId)) {
-                  loadedAddresses.push({
+                  // Extract address fields from record (record contains field objects with value property)
+                  const extractFieldValue = (fieldKey: string) => {
+                    // CRITICAL FIX: Check if record has field object with value property FIRST (nested structure)
+                    // This is the format: { address_line_1: { field_id: "...", value: "..." } }
+                    const fieldObj = record[fieldKey]
+                    if (fieldObj && typeof fieldObj === 'object' && fieldObj !== null && 'value' in fieldObj) {
+                      const value = fieldObj.value
+                      console.log(`🔍 [PRIORITY 2A] Extracted ${fieldKey} from nested object:`, value)
+                      return value
+                    }
+                    // Fallback: Check if record has the field directly as a primitive value (flat structure)
+                    if (record[fieldKey] !== undefined && (typeof record[fieldKey] !== 'object' || record[fieldKey] === null)) {
+                      console.log(`🔍 [PRIORITY 2A] Extracted ${fieldKey} from flat structure:`, record[fieldKey])
+                      return record[fieldKey]
+                    }
+                    console.log(`🔍 [PRIORITY 2A] No value found for ${fieldKey}`)
+                    return null
+                  }
+                  
+                  const extractedAddress = {
                     id: record.id,
                     company_id: record.company_id || companyId?.toString(),
                     workflow_id: workflowId,
                     workflow_instance_id: record.workflow_instance_id || existingRecord.workflow_instance_id || null,
-                    step_id: addressStep.step_id || addressStep.id,
-                    address_line_1: record.address_line_1,
-                    address_line_2: record.address_line_2,
-                    city: record.city,
-                    state_province: record.state_province,
-                    pincode: record.pincode,
-                    county: record.county,
-                    address_country: record.address_country,
-                    delivery: record.delivery || false,
-                    document: record.document || false,
-                    pay: record.pay || false,
-                    visit: record.visit || false,
+                    step_id: addressStep.step_id || addressStep.id || record.step_id,
+                    address_line_1: extractFieldValue('address_line_1'),
+                    address_line_2: extractFieldValue('address_line_2'),
+                    city: extractFieldValue('city'),
+                    state_province: extractFieldValue('state_province'),
+                    pincode: extractFieldValue('pincode'),
+                    county: extractFieldValue('county'),
+                    address_country: extractFieldValue('address_country'),
+                    delivery: extractFieldValue('delivery') !== undefined && extractFieldValue('delivery') !== null ? Boolean(extractFieldValue('delivery')) : false,
+                    document: extractFieldValue('document') !== undefined && extractFieldValue('document') !== null ? Boolean(extractFieldValue('document')) : false,
+                    pay: extractFieldValue('pay') !== undefined && extractFieldValue('pay') !== null ? Boolean(extractFieldValue('pay')) : false,
+                    visit: extractFieldValue('visit') !== undefined && extractFieldValue('visit') !== null ? Boolean(extractFieldValue('visit')) : false,
+                    created_at: record.created_at,
+                    updated_at: record.updated_at,
+                    created_by: record.created_by,
+                    updated_by: record.updated_by,
+                  }
+                  
+                  console.log(`🔍 [PRIORITY 2A] Extracted address ${idx + 1}:`, {
+                    id: extractedAddress.id,
+                    address_line_1: extractedAddress.address_line_1,
+                    city: extractedAddress.city,
+                    address_country: extractedAddress.address_country
                   })
+                  
+                  loadedAddresses.push(extractedAddress)
                   loadedAddressIds.add(addressId)
                 }
               })
-            } else if (addressStep.fields) {
+              
+              console.log(`✅ [PRIORITY 2A] Successfully loaded ${loadedAddresses.length} address(es) from steps[].records array`)
+            } else if (loadedAddresses.length === 0 && addressStep.fields) {
+              // PRIORITY 2B: Single address in fields structure (backward compatibility)
+              // Only use this if no addresses were loaded from records array
               // Single address in fields structure (backward compatibility)
               const addressData: CompanyAddress = {
                 company_id: companyId?.toString(),
@@ -1525,8 +1573,21 @@ export function DynamicCompanyWizard({
         }
         
         if (loadedAddresses.length > 0) {
-          setAddresses(loadedAddresses)
-          console.log(`✅ Loaded ${loadedAddresses.length} address(es) from API response`)
+          console.log(`✅ Setting addresses state with ${loadedAddresses.length} address(es):`, loadedAddresses.map(addr => ({
+            id: addr.id,
+            address_line_1: addr.address_line_1,
+            city: addr.city,
+            address_country: addr.address_country
+          })))
+          // CRITICAL FIX: Create a new array reference to ensure React detects the change
+          // This ensures AddressStepTable's useEffect will trigger when addresses are loaded
+          setAddresses([...loadedAddresses])
+          console.log(`✅ Successfully set addresses state with ${loadedAddresses.length} address(es)`)
+          console.log(`✅ Addresses array reference updated - AddressStepTable should sync`)
+        } else {
+          console.warn(`⚠️ No addresses loaded from API response. Checked sources: domain_tables.company_address, steps[].records, steps[].fields, flat structure`)
+          // Clear addresses if none were loaded (important for edit mode)
+          setAddresses([])
         }
       }
 
@@ -3047,20 +3108,27 @@ export function DynamicCompanyWizard({
 
                     {/* Check if this is the address step - use AddressStepTable */}
                     {(index === 1 || step.name?.toLowerCase().includes("address")) ? (
-                      <AddressStepTable
-                        companyId={companyId?.toString()}
-                        workflowId={workflowId}
-                        workflowInstanceId={workflowInstanceId || null}
-                        stepId={step.id}
-                        addresses={addresses}
-                        onAddressesChange={setAddresses}
-                        isCreateMode={!recordId}
-                        countryOptions={getCountryOptions()}
-                        countyOptions={getCountyOptions()}
-                        validationErrors={errors}
-                        apiValidationErrors={apiValidationErrors}
-                        workflowFields={step.fields || []}
-                      />
+                      <>
+                        {console.log(`🔍 [Tabs View] Rendering AddressStepTable for step ${index} with ${addresses.length} address(es)`, addresses.map(addr => ({
+                          id: addr.id,
+                          address_line_1: addr.address_line_1
+                        })))}
+                        <AddressStepTable
+                          key={`address-table-${addresses.length}-${addresses.map(a => a.id).join('-')}`}
+                          companyId={companyId?.toString()}
+                          workflowId={workflowId}
+                          workflowInstanceId={workflowInstanceId || null}
+                          stepId={step.id}
+                          addresses={addresses}
+                          onAddressesChange={setAddresses}
+                          isCreateMode={!recordId}
+                          countryOptions={getCountryOptions()}
+                          countyOptions={getCountyOptions()}
+                          validationErrors={errors}
+                          apiValidationErrors={apiValidationErrors}
+                          workflowFields={step.fields || []}
+                        />
+                      </>
                     ) : (
                       <div className="grid gap-5 md:grid-cols-12">
                         {(step.fields || []).map((field) => {
@@ -3218,8 +3286,12 @@ export function DynamicCompanyWizard({
             {/* Check if this is the address step - use AddressStepTable */}
             {isAddressStep ? (
               <>
-                {console.log("✅ Rendering AddressStepTable component - isAddressStep:", isAddressStep)}
+                {console.log(`🔍 [Wizard View] Rendering AddressStepTable for step ${currentStep} with ${addresses.length} address(es)`, addresses.map(addr => ({
+                  id: addr.id,
+                  address_line_1: addr.address_line_1
+                })))}
                 <AddressStepTable
+                  key={`address-table-wizard-${addresses.length}-${addresses.map(a => a.id).join('-')}`}
                   companyId={companyId?.toString()}
                   workflowId={workflowId}
                   workflowInstanceId={workflowInstanceId || null}

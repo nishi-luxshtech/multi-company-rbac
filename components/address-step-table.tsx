@@ -82,11 +82,59 @@ export function AddressStepTable({
   }, [addresses, onAddressesChange])
 
   // Sync with initial addresses prop
+  // CRITICAL FIX: Always sync when initialAddresses changes, even if empty array
+  // This ensures addresses are loaded correctly when API response arrives after component mount
   useEffect(() => {
-    if (initialAddresses && initialAddresses.length > 0) {
-      setAddresses(initialAddresses)
+    console.log(`🔍 [AddressStepTable] initialAddresses prop changed:`, {
+      length: initialAddresses?.length || 0,
+      addresses: initialAddresses?.map(addr => ({
+        id: addr.id,
+        address_line_1: addr.address_line_1,
+        city: addr.city
+      }))
+    })
+    console.log(`🔍 [AddressStepTable] Current addresses state:`, {
+      length: addresses.length,
+      addresses: addresses.map(addr => ({
+        id: addr.id,
+        address_line_1: addr.address_line_1,
+        city: addr.city
+      }))
+    })
+    
+    // CRITICAL FIX: Compare by both length and content to detect changes
+    // Use a more robust comparison that handles cases where IDs might be missing
+    const currentLength = addresses.length
+    const newLength = initialAddresses?.length || 0
+    
+    // Create comparison strings using address_line_1 + city as fallback if ID is missing
+    const currentAddressesStr = JSON.stringify(
+      addresses.map(a => ({
+        id: a.id || `temp-${a.address_line_1}-${a.city}`,
+        address_line_1: a.address_line_1,
+        city: a.city
+      })).sort((a, b) => (a.id || '').localeCompare(b.id || ''))
+    )
+    const newAddressesStr = JSON.stringify(
+      (initialAddresses || []).map(a => ({
+        id: a.id || `temp-${a.address_line_1}-${a.city}`,
+        address_line_1: a.address_line_1,
+        city: a.city
+      })).sort((a, b) => (a.id || '').localeCompare(b.id || ''))
+    )
+    
+    // Update if length changed OR content changed
+    if (currentLength !== newLength || currentAddressesStr !== newAddressesStr) {
+      console.log(`🔍 [AddressStepTable] Addresses changed, updating state from ${currentLength} to ${newLength} address(es)`)
+      console.log(`🔍 [AddressStepTable] New addresses to set:`, initialAddresses)
+      setAddresses(initialAddresses || [])
+      console.log(`✅ [AddressStepTable] Successfully updated addresses state to ${newLength} address(es)`)
+    } else {
+      console.log(`🔍 [AddressStepTable] Addresses unchanged (length: ${currentLength}, content match), skipping update`)
     }
-  }, [initialAddresses])
+  }, [initialAddresses]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Note: We intentionally don't include 'addresses' in deps to avoid infinite loops
+  // The comparison logic above handles the sync correctly
 
   const handleAdd = () => {
     setIsAdding(true)
@@ -188,6 +236,12 @@ export function AddressStepTable({
       {addresses.length > 0 && (
         <Card>
           <CardContent className="p-0">
+            {console.log(`🔍 [AddressStepTable] Rendering table with ${addresses.length} address(es):`, addresses.map((addr, idx) => ({
+              index: idx,
+              id: addr.id,
+              address_line_1: addr.address_line_1,
+              city: addr.city
+            })))}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -203,6 +257,11 @@ export function AddressStepTable({
               </TableHeader>
               <TableBody>
                 {addresses.map((address, index) => {
+                  console.log(`🔍 [AddressStepTable] Rendering address row ${index + 1}:`, {
+                    id: address.id,
+                    address_line_1: address.address_line_1,
+                    city: address.city
+                  })
                   const isEditing = editingId === address.id
                   const hasErrors = Object.keys(validationErrors).some(key => 
                     key.startsWith(`address_${index}_`)
