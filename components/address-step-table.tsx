@@ -236,12 +236,6 @@ export function AddressStepTable({
       {addresses.length > 0 && (
         <Card>
           <CardContent className="p-0">
-            {console.log(`🔍 [AddressStepTable] Rendering table with ${addresses.length} address(es):`, addresses.map((addr, idx) => ({
-              index: idx,
-              id: addr.id,
-              address_line_1: addr.address_line_1,
-              city: addr.city
-            })))}
             <Table>
               <TableHeader>
                 <TableRow>
