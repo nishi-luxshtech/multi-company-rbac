@@ -496,8 +496,10 @@ export function EnhancedCompanyCRUDView({
                                   <TableRow>
                                     <TableHead className="w-12">Sr.</TableHead>
                                     <TableHead>Address Line 1</TableHead>
+                                    <TableHead>Address Line 2</TableHead>
                                     <TableHead>City</TableHead>
                                     <TableHead>State/Province</TableHead>
+                                    <TableHead>County</TableHead>
                                     <TableHead>Pincode</TableHead>
                                     <TableHead>Country</TableHead>
                                     <TableHead>Type</TableHead>
@@ -515,8 +517,10 @@ export function EnhancedCompanyCRUDView({
                                     }
                                     
                                     const addressLine1 = extractFieldValue('address_line_1')
+                                    const addressLine2 = extractFieldValue('address_line_2')
                                     const city = extractFieldValue('city')
                                     const stateProvince = extractFieldValue('state_province')
+                                    const county = extractFieldValue('county')
                                     const pincode = extractFieldValue('pincode')
                                     const country = extractFieldValue('address_country')
                                     const delivery = extractFieldValue('delivery')
@@ -535,8 +539,10 @@ export function EnhancedCompanyCRUDView({
                                       <TableRow key={record.id || `address-${index}`}>
                                         <TableCell>{index + 1}</TableCell>
                                         <TableCell>{addressLine1 || "-"}</TableCell>
+                                        <TableCell>{addressLine2 || "-"}</TableCell>
                                         <TableCell>{city || "-"}</TableCell>
                                         <TableCell>{stateProvince || "-"}</TableCell>
+                                        <TableCell>{county || "-"}</TableCell>
                                         <TableCell>{pincode || "-"}</TableCell>
                                         <TableCell>{country || "-"}</TableCell>
                                         <TableCell>

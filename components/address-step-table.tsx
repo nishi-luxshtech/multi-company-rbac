@@ -247,8 +247,10 @@ export function AddressStepTable({
                 <TableRow>
                   <TableHead className="w-12">Sr.</TableHead>
                   <TableHead>Address Line 1</TableHead>
+                  <TableHead>Address Line 2</TableHead>
                   <TableHead>City</TableHead>
                   <TableHead>State/Province</TableHead>
+                  <TableHead>County</TableHead>
                   <TableHead>Pincode</TableHead>
                   <TableHead>Country</TableHead>
                   <TableHead>Type</TableHead>
@@ -292,6 +294,7 @@ export function AddressStepTable({
                     >
                       <TableCell>{index + 1}</TableCell>
                       <TableCell>{address.address_line_1 || "-"}</TableCell>
+                      <TableCell>{address.address_line_2 || "-"}</TableCell>
                       <TableCell>
                         {address.city || "-"}
                         {getFieldError(index, "city") && (
@@ -301,6 +304,7 @@ export function AddressStepTable({
                         )}
                       </TableCell>
                       <TableCell>{address.state_province || "-"}</TableCell>
+                      <TableCell>{address.county || "-"}</TableCell>
                       <TableCell>
                         {address.pincode || "-"}
                         {getFieldError(index, "pincode") && (
@@ -722,7 +726,7 @@ function AddressEditRow({
 
   return (
     <TableRow className="bg-blue-50 dark:bg-blue-950/20">
-      <TableCell colSpan={8}>
+      <TableCell colSpan={10}>
         <Card>
           <CardContent className="pt-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
