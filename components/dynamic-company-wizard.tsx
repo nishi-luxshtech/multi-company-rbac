@@ -1922,6 +1922,10 @@ export function DynamicCompanyWizard({
       if (isAddressStep && addresses && addresses.length > 0) {
         // Format addresses as array-indexed fields for step validation
         addresses.forEach((address, index) => {
+          // Include address ID if available (for ID-based updates)
+          if (address.id && address.id !== `temp-${Date.now()}` && !address.id.toString().startsWith('temp-')) {
+            stepData[`address_${index}_id`] = address.id
+          }
           if (address.address_line_1) stepData[`address_${index}_address_line_1`] = address.address_line_1
           if (address.address_line_2) stepData[`address_${index}_address_line_2`] = address.address_line_2
           if (address.city) stepData[`address_${index}_city`] = address.city
@@ -2324,12 +2328,23 @@ export function DynamicCompanyWizard({
         console.log(`🔍 Formatting ${addresses.length} address(es) for submission...`)
         addresses.forEach((address, index) => {
           console.log(`🔍 Formatting address ${index}:`, {
+            id: address.id,
             address_line_1: address.address_line_1,
             city: address.city,
             state_province: address.state_province,
             pincode: address.pincode,
             address_country: address.address_country
           })
+          
+          // NEW: Include address ID if available (for ID-based updates in PUT API)
+          // If address has ID, include it so backend can update existing address
+          // If no ID, backend will treat as new address (insert)
+          if (address.id && address.id !== `temp-${Date.now()}` && !address.id.toString().startsWith('temp-')) {
+            completeData[`address_${index}_id`] = address.id
+            console.log(`✓ Including address ID for address ${index}: ${address.id}`)
+          } else {
+            console.log(`ℹ️ Address ${index} has no ID or temp ID, will be inserted as new`)
+          }
           
           // Format each address field as array-indexed
           // IMPORTANT: Send ALL fields, even if empty, to ensure backend receives complete data
