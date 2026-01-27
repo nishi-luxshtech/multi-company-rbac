@@ -59,7 +59,7 @@ export function DynamicCompanyWizard({
   const [dataLoaded, setDataLoaded] = useState(false)
   const [addresses, setAddresses] = useState<CompanyAddress[]>([])
   const { toast } = useToast()
-  
+
   // Refs to track loading state and prevent duplicate API calls
   const isLoadingWorkflowRef = useRef(false)
   const isLoadingDataRef = useRef(false)
@@ -67,7 +67,7 @@ export function DynamicCompanyWizard({
   const countryFieldCheckRef = useRef(false)
   const workflowEffectTriggeredRef = useRef<Set<string>>(new Set())
   const recordEffectTriggeredRef = useRef<Set<string>>(new Set())
-  
+
   // Safely get currentCompany from auth context if available
   // Use useContext directly to avoid throwing error if not in provider
   const authContext = useContext(AuthContext)
@@ -75,14 +75,14 @@ export function DynamicCompanyWizard({
 
   useEffect(() => {
     const workflowKey = workflowId || "default-workflow"
-    
+
     if (workflowEffectTriggeredRef.current.has(workflowKey)) {
       // Skip duplicate load triggered by React StrictMode
       return
     }
-    
+
     workflowEffectTriggeredRef.current.add(workflowKey)
-    
+
     // Reset state for new workflow load
     setCurrentStep(0)
     setErrors({})
@@ -95,19 +95,19 @@ export function DynamicCompanyWizard({
     setDataLoaded(false)
     setIsLoadingWorkflow(true)
     setIsLoadingData(false)
-    
+
     // Reset refs
     isLoadingDataRef.current = false
     dataLoadedRef.current = false
     countryFieldCheckRef.current = false
-    
+
     loadWorkflow()
   }, [workflowId])
 
   // Load existing company data when editing (recordId is provided)
   useEffect(() => {
     if (!workflow) return
-    
+
     if (recordId) {
       const recordKey = `${workflowId || "default-workflow"}-${recordId}`
       if (recordEffectTriggeredRef.current.has(recordKey)) {
@@ -123,7 +123,7 @@ export function DynamicCompanyWizard({
       setIsLoadingData(false)
     }
   }, [workflow, recordId, workflowId])
-  
+
   /**
    * ====================================================================
    * useEffect: Monitor Country Field Value
@@ -145,20 +145,20 @@ export function DynamicCompanyWizard({
     if (!workflow || !recordId || isLoadingDataRef.current || !dataLoadedRef.current || countryFieldCheckRef.current) {
       return
     }
-    
+
     // Mark as checked to prevent duplicate calls
     countryFieldCheckRef.current = true
-    
+
     // Find ALL Country fields (Step 1 AND Step 2)
     const allCountryFields = workflow.steps
-      .flatMap((step, stepIndex) => 
+      .flatMap((step, stepIndex) =>
         step.fields
           .filter(f => f.label?.toLowerCase().includes("country"))
           .map(field => ({ field, step, stepIndex }))
       )
-    
+
     if (allCountryFields.length === 0) return
-    
+
     // Check each Country field
     const emptyCountryFields = allCountryFields.filter(({ field, stepIndex }) => {
       const value = formData[field.id]
@@ -168,7 +168,7 @@ export function DynamicCompanyWizard({
       }
       return true
     })
-    
+
     // If any Country field is empty, try to fix it
     // BUT only if data has finished loading (not during initial load)
     if (emptyCountryFields.length > 0 && dataLoadedRef.current) {
@@ -178,7 +178,7 @@ export function DynamicCompanyWizard({
       })
       console.warn(`   This should not happen if data was loaded correctly.`)
       console.warn(`   Check the loadExistingCompanyData function logs above.`)
-      
+
       // Try to fetch and set the value one more time as a last resort
       // This will only run if the value is still empty after all other attempts
       // Only run once - prevent duplicate API calls
@@ -187,12 +187,12 @@ export function DynamicCompanyWizard({
         if (isLoadingDataRef.current) {
           return
         }
-        
+
         try {
           // Use getTableRecord API if recordId is available (more efficient)
           // Otherwise fall back to getTableData
           let record: any = null
-          
+
           if (recordId) {
             try {
               record = await dynamicWorkflowAPI.getTableRecord(workflowId, recordId)
@@ -202,7 +202,7 @@ export function DynamicCompanyWizard({
               // Fall through to getTableData
             }
           }
-          
+
           if (!record) {
             // Fallback to getTableData
             const tableDataResponse = await dynamicWorkflowAPI.getTableData(
@@ -212,16 +212,16 @@ export function DynamicCompanyWizard({
               0,
               true // group_by_step = true
             )
-            
+
             // Find the matching record
             if (tableDataResponse.records && tableDataResponse.records.length > 0) {
               if (recordId) {
-                record = tableDataResponse.records.find(r => 
+                record = tableDataResponse.records.find(r =>
                   r.id === recordId || String(r.id) === String(recordId)
                 )
               }
               if (!record && companyId) {
-                record = tableDataResponse.records.find(r => 
+                record = tableDataResponse.records.find(r =>
                   r.company_id === companyId || String(r.company_id) === String(companyId)
                 )
               }
@@ -230,19 +230,19 @@ export function DynamicCompanyWizard({
               }
             }
           }
-          
+
           if (!record) {
             console.error("Record not found in fetchAndSetCountry fallback")
             return
           }
-          
+
           setFormData(prev => {
             const updated = { ...prev }
             let hasChanges = false
-            
+
             emptyCountryFields.forEach(({ field, step, stepIndex }) => {
               // For Step 2 (Addresses), prefer address_country
-              if (stepIndex === 1 || step.name?.toLowerCase().includes("address")) {
+              if (step.name?.toLowerCase().includes("address")) {
                 if (record.address_country && !prev[field.id]) {
                   updated[field.id] = String(record.address_country)
                   hasChanges = true
@@ -265,14 +265,14 @@ export function DynamicCompanyWizard({
                 }
               }
             })
-            
+
             return hasChanges ? updated : prev
           })
         } catch (error) {
           console.error("Error in last resort Country field fetch:", error)
         }
       }
-      
+
       // Only try once, after a delay to avoid infinite loops
       const timeoutId = setTimeout(fetchAndSetCountry, 1000)
       return () => clearTimeout(timeoutId)
@@ -285,15 +285,15 @@ export function DynamicCompanyWizard({
       console.log("Workflow already loading, skipping duplicate call")
       return
     }
-    
+
     try {
       isLoadingWorkflowRef.current = true
       setIsLoadingWorkflow(true)
       setLoadError(null)
-      
+
       // Try to load from dynamic workflow API first
       const dynamicWorkflow = await WorkflowBridgeService.getWorkflowById(workflowId)
-      
+
       if (dynamicWorkflow) {
         // Convert to frontend format
         const convertedWorkflow: Workflow = {
@@ -326,7 +326,7 @@ export function DynamicCompanyWizard({
         }
         setWorkflow(convertedWorkflow)
         console.log("DynamicCompanyWizard: Loaded dynamic workflow", workflowId)
-        
+
         // Initialize form data
         const initialData: Record<string, any> = {}
         convertedWorkflow.steps.forEach((step) => {
@@ -339,16 +339,16 @@ export function DynamicCompanyWizard({
         // Fallback to localStorage
         const wf = workflowStorage.getById(workflowId)
         console.log("DynamicCompanyWizard: Loading workflow from localStorage", workflowId, wf ? "found" : "not found")
-        
+
         if (wf) {
           console.log("DynamicCompanyWizard: Workflow has", wf.steps?.length || 0, "steps")
           setWorkflow(wf)
           const initialData: Record<string, any> = {}
-          ;(wf.steps || []).forEach((step) => {
-            ;(step.fields || []).forEach((field) => {
-              initialData[field.id] = field.type === "checkbox" ? false : ""
+            ; (wf.steps || []).forEach((step) => {
+              ; (step.fields || []).forEach((field) => {
+                initialData[field.id] = field.type === "checkbox" ? false : ""
+              })
             })
-          })
           setFormData(initialData)
         } else {
           console.error("DynamicCompanyWizard: Workflow not found:", workflowId)
@@ -366,17 +366,17 @@ export function DynamicCompanyWizard({
       console.error("DynamicCompanyWizard: Failed to load workflow:", error)
       const errorMsg = error?.response?.data?.detail || error?.message || "Failed to load workflow"
       setLoadError(errorMsg)
-      
+
       // Fallback to localStorage
       const wf = workflowStorage.getById(workflowId)
       if (wf) {
         setWorkflow(wf)
         const initialData: Record<string, any> = {}
-        ;(wf.steps || []).forEach((step) => {
-          ;(step.fields || []).forEach((field) => {
-            initialData[field.id] = field.type === "checkbox" ? false : ""
+          ; (wf.steps || []).forEach((step) => {
+            ; (step.fields || []).forEach((field) => {
+              initialData[field.id] = field.type === "checkbox" ? false : ""
+            })
           })
-        })
         setFormData(initialData)
         // Still show warning but continue
         toast({
@@ -396,7 +396,7 @@ export function DynamicCompanyWizard({
       setIsLoadingWorkflow(false)
     }
   }
-  
+
   const loadExistingCompanyData = async () => {
     // Prevent duplicate calls
     // Allow loading if recordId OR companyId is available (backward compatibility)
@@ -416,9 +416,9 @@ export function DynamicCompanyWizard({
       setIsLoadingData(true)
       setLoadError(null)
       console.log("Loading existing company data for editing:", { workflowId, recordId, companyId })
-      
+
       let existingRecord: any = null
-      
+
       // Use getTableRecord API if recordId is provided (more efficient and accurate)
       if (recordId) {
         console.log("Using getTableRecord API for specific record:", recordId)
@@ -435,9 +435,9 @@ export function DynamicCompanyWizard({
             0,
             true
           )
-          
+
           if (tableDataResponse.records && tableDataResponse.records.length > 0) {
-            existingRecord = tableDataResponse.records.find(r => 
+            existingRecord = tableDataResponse.records.find(r =>
               r.id === recordId || String(r.id) === String(recordId)
             ) || tableDataResponse.records[0]
           }
@@ -452,21 +452,21 @@ export function DynamicCompanyWizard({
           0, // offset
           true // group_by_step = true
         )
-        
+
         console.log("Table data response:", {
           total_records: tableDataResponse.total_records,
           records_count: tableDataResponse.records?.length || 0,
           grouped_by_step: tableDataResponse.grouped_by_step
         })
-        
+
         // Find the matching record by companyId
         if (tableDataResponse.records && tableDataResponse.records.length > 0) {
           if (companyId) {
-            existingRecord = tableDataResponse.records.find(r => 
+            existingRecord = tableDataResponse.records.find(r =>
               r.company_id === companyId || String(r.company_id) === String(companyId)
             )
           }
-          
+
           // If still not found, use the first record (fallback)
           if (!existingRecord && tableDataResponse.records.length === 1) {
             existingRecord = tableDataResponse.records[0]
@@ -474,28 +474,28 @@ export function DynamicCompanyWizard({
           }
         }
       }
-      
+
       if (!existingRecord) {
         throw new Error(
           `Record not found. ` +
           `Searched for recordId: ${recordId || 'none'}, companyId: ${companyId || 'none'}`
         )
       }
-      
+
       console.log("Found matching record:", {
         id: existingRecord.id,
         company_id: existingRecord.company_id,
         has_steps: !!existingRecord.steps,
         steps_count: existingRecord.steps?.length || 0
       })
-      
+
       console.log("=== LOADING EXISTING DATA ===")
       console.log("Full API Response:", JSON.stringify(existingRecord, null, 2))
-      console.log("Workflow steps:", workflow.steps.map(s => ({ 
-        name: s.name, 
-        fields: s.fields.map(f => ({ id: f.id, label: f.label, type: f.type })) 
+      console.log("Workflow steps:", workflow.steps.map(s => ({
+        name: s.name,
+        fields: s.fields.map(f => ({ id: f.id, label: f.label, type: f.type }))
       })))
-      
+
       // ====================================================================
       // DIRECT COUNTRY EXTRACTION FROM API - PRIORITY #1
       // ====================================================================
@@ -504,7 +504,7 @@ export function DynamicCompanyWizard({
       // ====================================================================
       let countryValueForGeneralInfo: string | null = null
       let countryValueForAddress: string | null = null
-      
+
       // Method 1: Check flat structure
       if (existingRecord.country) {
         countryValueForGeneralInfo = String(existingRecord.country).trim()
@@ -514,17 +514,17 @@ export function DynamicCompanyWizard({
         countryValueForAddress = String(existingRecord.address_country).trim()
         console.log("🎯 DIRECT EXTRACTION: Found address_country in flat structure (for Address):", countryValueForAddress)
       }
-      
+
       // Method 2: Check structured steps format - extract per step
       if (existingRecord.steps && Array.isArray(existingRecord.steps)) {
         for (const step of existingRecord.steps) {
           const stepName = (step.name || step.step_name || "").toLowerCase()
           const isAddressStep = stepName.includes("address") || step.order === 2 || step.step_order === 2
           const isGeneralInfoStep = stepName.includes("general") || step.order === 1 || step.step_order === 1
-          
+
           if (step.fields) {
             let fieldsToCheck: any[] = []
-            
+
             if (Array.isArray(step.fields)) {
               // Legacy format: fields is an array
               fieldsToCheck = step.fields
@@ -536,11 +536,11 @@ export function DynamicCompanyWizard({
                 value: fieldData?.value
               }))
             }
-            
+
             for (const field of fieldsToCheck) {
               const fieldName = (field.name || field.field_name || "").toLowerCase()
               const fieldValue = field.value
-              
+
               // Extract address_country for Address step
               if (isAddressStep && fieldName === "address_country" && fieldValue && fieldValue !== "" && fieldValue !== null) {
                 countryValueForAddress = String(fieldValue).trim()
@@ -561,7 +561,7 @@ export function DynamicCompanyWizard({
           }
         }
       }
-      
+
       // Method 3: Fallback - search all keys in the response
       if (!countryValueForGeneralInfo && existingRecord.country) {
         countryValueForGeneralInfo = String(existingRecord.country).trim()
@@ -569,24 +569,24 @@ export function DynamicCompanyWizard({
       if (!countryValueForAddress && existingRecord.address_country) {
         countryValueForAddress = String(existingRecord.address_country).trim()
       }
-      
+
       // ====================================================================
       // FIND ALL COUNTRY FIELDS IN WORKFLOW (Step 1 AND Step 2)
       // ====================================================================
       const allCountryFields = workflow.steps
-        .flatMap((step, stepIndex) => 
+        .flatMap((step, stepIndex) =>
           step.fields
             .filter(f => f.label?.toLowerCase().includes("country"))
             .map(field => ({ field, step, stepIndex }))
         )
-      
+
       console.log("🔍 Found Country fields in workflow:", allCountryFields.map(cf => ({
         stepIndex: cf.stepIndex,
         stepName: cf.step.name,
         fieldId: cf.field.id,
         fieldLabel: cf.field.label
       })))
-      
+
       // Set country values per step - CRITICAL: Use step-specific values
       if (allCountryFields.length > 0) {
         console.log("✅ DIRECT SET: Setting country values per step:", {
@@ -594,18 +594,18 @@ export function DynamicCompanyWizard({
           address: countryValueForAddress,
           fieldsCount: allCountryFields.length
         })
-        
+
         // Set it directly in formData immediately (before any other mapping)
         setFormData(prev => {
           const updated = { ...prev }
-          
+
           // Set the value for each Country field based on its step
           allCountryFields.forEach(({ field, step, stepIndex }) => {
-            const isAddressStep = stepIndex === 1 || step.name?.toLowerCase().includes("address")
-            const isGeneralInfoStep = stepIndex === 0 || step.name?.toLowerCase().includes("general")
-            
+            const isAddressStep = step.name?.toLowerCase().includes("address")
+            const isGeneralInfoStep = step.name?.toLowerCase().includes("general")
+
             let valueToSet: string | null = null
-            
+
             // For Address step, ONLY use address_country value
             if (isAddressStep) {
               valueToSet = countryValueForAddress
@@ -632,13 +632,13 @@ export function DynamicCompanyWizard({
                 valueToSet = countryValueForGeneralInfo
               }
             }
-            
+
             if (valueToSet) {
               updated[field.id] = valueToSet
               console.log(`    Field ID: ${field.id}, Label: ${field.label}, Value: ${valueToSet}`)
             }
           })
-          
+
           console.log("✅ DIRECT SET: Updated formData with country values per step")
           return updated
         })
@@ -646,16 +646,16 @@ export function DynamicCompanyWizard({
         console.error("❌ DIRECT SET FAILED: No Country fields found in workflow!")
         console.error("   Workflow fields:", workflow.steps.flatMap(s => s.fields).map(f => ({ id: f.id, label: f.label })))
       }
-      
+
       // Find Country field specifically for debugging
-      const countryFields = workflow.steps.flatMap(s => s.fields).filter(f => 
+      const countryFields = workflow.steps.flatMap(s => s.fields).filter(f =>
         f.label?.toLowerCase().includes("country") || f.id?.toLowerCase().includes("country")
       )
       console.log("Country-related fields in workflow:", countryFields)
 
       // Map the existing data to form fields
       const existingFormData: Record<string, any> = {}
-      
+
       // Helper function to match API field to workflow field
       // stepContext: { step_id?: string, step_name?: string } - optional step context to search within specific step
       const findWorkflowField = (apiFieldName: string, apiFieldId?: string, apiFieldLabel?: string, stepContext?: { step_id?: string, step_name?: string }) => {
@@ -663,19 +663,19 @@ export function DynamicCompanyWizard({
         if (isCountryField) {
           console.log("🔍 Searching for Country field match:", { apiFieldName, apiFieldId, apiFieldLabel, stepContext })
         }
-        
+
         // Determine which steps to search in
         let stepsToSearch: typeof workflow.steps = []
-        
+
         if (stepContext) {
           // If step context is provided, find the matching step first
           const matchingStep = workflow.steps.find(step => {
             if (stepContext.step_id && step.id === stepContext.step_id) return true
-            if (stepContext.step_name && (step.name?.toLowerCase() === stepContext.step_name.toLowerCase() || 
-                step.name?.toLowerCase().includes(stepContext.step_name.toLowerCase()))) return true
+            if (stepContext.step_name && (step.name?.toLowerCase() === stepContext.step_name.toLowerCase() ||
+              step.name?.toLowerCase().includes(stepContext.step_name.toLowerCase()))) return true
             return false
           })
-          
+
           if (matchingStep) {
             // Search only within the matching step
             stepsToSearch = [matchingStep]
@@ -694,7 +694,7 @@ export function DynamicCompanyWizard({
             console.log("  📍 No step context, searching all steps")
           }
         }
-        
+
         const matched = stepsToSearch
           .flatMap(s => s.fields)
           .find(f => {
@@ -732,7 +732,7 @@ export function DynamicCompanyWizard({
               if (isCountryField) console.log("  ✓ Matched by field.name:", f.id)
               return true
             }
-            
+
             // 5. Try matching by converting label to snake_case (exact match)
             if (f.label) {
               const labelSnakeCase = f.label
@@ -743,17 +743,17 @@ export function DynamicCompanyWizard({
                 if (isCountryField) console.log("  ✓ Matched by exact label snake_case:", f.id, "label:", f.label)
                 return true
               }
-              
+
               // 6. Try matching by checking if API field name ends with label (handles prefixes like "address_country")
               const apiFieldNameLower = apiFieldName.toLowerCase()
               const labelSnakeCaseLower = labelSnakeCase.toLowerCase()
-              
+
               // Check if API field name ends with the label (e.g., "address_country" ends with "country")
               if (apiFieldNameLower.endsWith("_" + labelSnakeCaseLower) || apiFieldNameLower === labelSnakeCaseLower) {
                 if (isCountryField) console.log("  ✓ Matched by endsWith:", f.id, "label:", f.label, "apiName:", apiFieldName)
                 return true
               }
-              
+
               // Check if API field name contains the label (for cases like "address_country" containing "country")
               if (apiFieldNameLower.includes("_" + labelSnakeCaseLower) || apiFieldNameLower.includes(labelSnakeCaseLower)) {
                 // Make sure it's not just a partial match (e.g., "country_code" shouldn't match "country")
@@ -765,10 +765,10 @@ export function DynamicCompanyWizard({
                 }
               }
             }
-            
+
             return false
           })
-        
+
         if (isCountryField) {
           if (matched) {
             console.log("  ✅ Country field MATCHED:", { id: matched.id, label: matched.label })
@@ -777,31 +777,31 @@ export function DynamicCompanyWizard({
             console.log("  Available workflow fields:", workflow.steps.flatMap(s => s.fields).map(f => ({ id: f.id, label: f.label })))
           }
         }
-        
+
         return matched
       }
-      
+
       // Process structured steps format if available
       // When group_by_step=true, fields is an object { [fieldName]: { field_id, field_label, value, ... } }
       // When group_by_step=false or from getTableRecord, fields might be an array
       if (existingRecord.steps && Array.isArray(existingRecord.steps)) {
         console.log("Processing steps from API response:", existingRecord.steps.length)
-        
+
         existingRecord.steps.forEach((apiStep: any) => {
           const stepName = apiStep.name || apiStep.step_name
           const stepId = apiStep.step_id
-          const fieldsCount = apiStep.fields 
+          const fieldsCount = apiStep.fields
             ? (Array.isArray(apiStep.fields) ? apiStep.fields.length : Object.keys(apiStep.fields).length)
             : 0
           console.log("Processing step:", stepName, "Step ID:", stepId, "Fields:", fieldsCount)
-          
+
           // Prepare step context for field matching
           const stepContext = stepId || stepName ? { step_id: stepId, step_name: stepName } : undefined
-          
+
           if (apiStep.fields) {
             // Handle both formats: object (group_by_step=true) and array (legacy)
             const fieldsToProcess: any[] = []
-            
+
             if (Array.isArray(apiStep.fields)) {
               // Legacy format: fields is an array
               fieldsToProcess.push(...apiStep.fields.map((field: any) => ({
@@ -823,25 +823,25 @@ export function DynamicCompanyWizard({
                 }
               })
             }
-            
+
             fieldsToProcess.forEach((apiField: any) => {
               const apiFieldName = apiField.name
               const apiFieldId = apiField.field_id
               const apiFieldValue = apiField.value
               const apiFieldLabel = apiField.label
-              
+
               console.log("Processing API field:", { name: apiFieldName, id: apiFieldId, value: apiFieldValue, label: apiFieldLabel, step: stepName })
-              
+
               // Process field if it has a name and a non-empty value
               if (apiFieldName && apiFieldValue !== undefined && apiFieldValue !== null && apiFieldValue !== "") {
                 // Pass step context to ensure field is matched within the correct step
                 const workflowField = findWorkflowField(apiFieldName, apiFieldId, apiFieldLabel, stepContext)
-                
+
                 if (workflowField) {
                   console.log("Matched workflow field:", { id: workflowField.id, label: workflowField.label, type: workflowField.type, apiName: apiFieldName })
-                  
+
                   let value = apiFieldValue
-                  
+
                   // Handle different field types
                   if (workflowField.type === "checkbox") {
                     value = Boolean(value)
@@ -852,13 +852,13 @@ export function DynamicCompanyWizard({
                   } else {
                     value = String(value)
                   }
-                  
+
                   // Use workflow field ID as the key (this is what the form uses)
                   existingFormData[workflowField.id] = value
                   console.log("✓ Mapped field:", workflowField.id, "=", value, "(from API name:", apiFieldName, ")")
                 } else {
                   console.warn("⚠ Could not find workflow field for API field:", { name: apiFieldName, id: apiFieldId, label: apiFieldLabel, value: apiFieldValue })
-                  
+
                   // SPECIAL HANDLING: If this is address_country, directly map to Country field within the same step
                   if (apiFieldName === "address_country" || apiFieldName.toLowerCase().includes("country")) {
                     // Search for country field within the same step context (if available)
@@ -867,8 +867,8 @@ export function DynamicCompanyWizard({
                       // Find country field within the matching step
                       const matchingStep = workflow.steps.find(step => {
                         if (stepContext.step_id && step.id === stepContext.step_id) return true
-                        if (stepContext.step_name && (step.name?.toLowerCase() === stepContext.step_name.toLowerCase() || 
-                            step.name?.toLowerCase().includes(stepContext.step_name.toLowerCase()))) return true
+                        if (stepContext.step_name && (step.name?.toLowerCase() === stepContext.step_name.toLowerCase() ||
+                          step.name?.toLowerCase().includes(stepContext.step_name.toLowerCase()))) return true
                         return false
                       })
                       if (matchingStep) {
@@ -876,7 +876,7 @@ export function DynamicCompanyWizard({
                         console.log(`  📍 Searching for Country field within step: ${matchingStep.name}`)
                       }
                     }
-                    
+
                     // Fallback: if not found in step context or no context, search all steps (backward compatibility)
                     if (!countryField) {
                       countryField = workflow.steps
@@ -884,7 +884,7 @@ export function DynamicCompanyWizard({
                         .find(f => f.label?.toLowerCase().includes("country"))
                       console.log(`  ⚠️ Country field not found in step context, searching all steps`)
                     }
-                    
+
                     if (countryField && !existingFormData[countryField.id]) {
                       existingFormData[countryField.id] = String(apiFieldValue)
                       console.log(`✅ DIRECTLY mapped ${apiFieldName} to Country field ${countryField.id} in step ${stepName}:`, apiFieldValue)
@@ -918,21 +918,21 @@ export function DynamicCompanyWizard({
           }
         })
       }
-      
+
       // Also check flat structure for any fields that might not be in the steps format
       // This handles cases where the API returns both formats or only flat format
       console.log("=== CHECKING FLAT STRUCTURE ===")
       console.log("Flat record keys:", Object.keys(existingRecord))
       console.log("Full flat record (first 20 keys):", Object.fromEntries(Object.entries(existingRecord).slice(0, 20)))
-      
+
       // PRIORITY FIX: Check for address_country directly in flat structure FIRST
       // This ensures we catch it even if steps format doesn't have it
       // IMPORTANT: address_country should only map to Address step's Country field
       if (existingRecord.address_country !== undefined && existingRecord.address_country !== null && existingRecord.address_country !== "") {
         console.log("🎯 Found address_country in flat structure:", existingRecord.address_country)
         // Find Country field in Address step (Step 2) only
-        const addressStep = workflow.steps.find(step => 
-          step.name?.toLowerCase().includes("address") || 
+        const addressStep = workflow.steps.find(step =>
+          step.name?.toLowerCase().includes("address") ||
           step.order === 2 ||
           (workflow.steps.indexOf(step) === 1) // Second step (0-indexed)
         )
@@ -954,12 +954,12 @@ export function DynamicCompanyWizard({
           }
         }
       }
-      
+
       workflow.steps.forEach((step, stepIndex) => {
         // Determine if this is an Address step
-        const isAddressStep = step.name?.toLowerCase().includes("address") || stepIndex === 1
-        const isGeneralInfoStep = step.name?.toLowerCase().includes("general") || stepIndex === 0
-        
+        const isAddressStep = step.name?.toLowerCase().includes("address")
+        const isGeneralInfoStep = step.name?.toLowerCase().includes("general")
+
         step.fields.forEach((field) => {
           // Skip if already mapped from steps format
           if (existingFormData[field.id] !== undefined) {
@@ -968,27 +968,27 @@ export function DynamicCompanyWizard({
             }
             return
           }
-          
+
           const isCountryField = field.label?.toLowerCase().includes("country")
           if (isCountryField) {
             console.log(`🔍 Checking flat structure for Country field:`, { id: field.id, label: field.label, step: step.name, stepIndex })
           }
-          
+
           // Try to find the field in the flat record
           // Convert label to snake_case
           const labelSnakeCase = field.label
             ?.toLowerCase()
             .replace(/[^a-z0-9]+/g, "_")
             .replace(/^_+|_+$/g, "") || ""
-          
+
           if (isCountryField) {
             console.log(`  Label snake_case: "${labelSnakeCase}"`)
           }
-          
+
           // Try exact match first
           if (existingRecord[labelSnakeCase] !== undefined && existingRecord[labelSnakeCase] !== null && existingRecord[labelSnakeCase] !== "") {
             let value = existingRecord[labelSnakeCase]
-            
+
             // Handle different field types
             if (field.type === "checkbox") {
               value = Boolean(value)
@@ -999,7 +999,7 @@ export function DynamicCompanyWizard({
             } else {
               value = String(value)
             }
-            
+
             existingFormData[field.id] = value
             console.log("✓ Mapped from flat structure (exact match):", field.id, "=", value, "(from key:", labelSnakeCase, ")")
             if (isCountryField) {
@@ -1007,7 +1007,7 @@ export function DynamicCompanyWizard({
             }
             return
           }
-          
+
           // Try matching with common prefixes (e.g., "address_country" for "Country" field)
           // Check all keys in the record that might match
           let foundMatch = false
@@ -1016,10 +1016,10 @@ export function DynamicCompanyWizard({
             if (['id', 'workflow_id', 'company_id', 'workflow_instance_id', 'created_at', 'updated_at', 'created_by', 'updated_by', 'steps'].includes(key)) {
               continue
             }
-            
+
             const keyLower = key.toLowerCase()
             const labelSnakeLower = labelSnakeCase.toLowerCase()
-            
+
             // CRITICAL FIX: For country fields, ensure step-specific matching
             if (isCountryField) {
               // If this is Address step's Country field, only match address_country
@@ -1037,7 +1037,7 @@ export function DynamicCompanyWizard({
                 }
               }
             }
-            
+
             // Check multiple matching patterns
             const exactMatch = keyLower === labelSnakeLower
             const endsWithMatch = keyLower.endsWith("_" + labelSnakeLower)
@@ -1045,9 +1045,9 @@ export function DynamicCompanyWizard({
             const keyParts = keyLower.split("_")
             const containsAsWordPart = keyLower.includes("_" + labelSnakeLower) && keyParts.includes(labelSnakeLower)
             const anyPartMatches = labelSnakeLower && keyLower.includes(labelSnakeLower) && keyParts.some(part => part === labelSnakeLower)
-            
+
             const matches = exactMatch || endsWithMatch || containsAsWordPart || anyPartMatches
-            
+
             if (isCountryField && (keyLower.includes("country") || labelSnakeLower === "country")) {
               console.log(`  Checking key "${key}":`, {
                 exactMatch,
@@ -1059,12 +1059,12 @@ export function DynamicCompanyWizard({
                 stepContext: { step: step.name, stepIndex, isAddressStep, isGeneralInfoStep }
               })
             }
-            
+
             if (matches) {
               const value = existingRecord[key]
               if (value !== undefined && value !== null && value !== "") {
                 let processedValue = value
-                
+
                 // Handle different field types
                 if (field.type === "checkbox") {
                   processedValue = Boolean(processedValue)
@@ -1075,7 +1075,7 @@ export function DynamicCompanyWizard({
                 } else {
                   processedValue = String(processedValue)
                 }
-                
+
                 existingFormData[field.id] = processedValue
                 foundMatch = true
                 console.log("✓ Mapped from flat structure with prefix:", field.id, "=", processedValue, "(from key:", key, ", label:", field.label, ", step:", step.name, ")")
@@ -1090,12 +1090,12 @@ export function DynamicCompanyWizard({
               }
             }
           }
-          
+
           if (isCountryField && !foundMatch) {
             console.log(`❌ Country field NOT found in flat structure after checking all keys`)
             console.log(`  Searched for label snake_case: "${labelSnakeCase}"`)
             console.log(`  Available keys with "country":`, Object.keys(existingRecord).filter(k => k.toLowerCase().includes("country")))
-            
+
             // Last resort: Direct check for common country field names with step context
             if (isAddressStep) {
               // For Address step, only use address_country
@@ -1133,7 +1133,7 @@ export function DynamicCompanyWizard({
       console.log("=== FINAL MAPPING RESULTS ===")
       console.log("Final mapped existing form data:", existingFormData)
       console.log("Form data keys:", Object.keys(existingFormData))
-      
+
       // Check specifically for Country field
       const countryFieldIds = workflow.steps.flatMap(s => s.fields)
         .filter(f => f.label?.toLowerCase().includes("country"))
@@ -1142,7 +1142,7 @@ export function DynamicCompanyWizard({
       console.log("Country field IDs in workflow:", countryFieldIds)
       console.log("address_country in API response:", existingRecord.address_country)
       console.log("country in API response:", existingRecord.country)
-      
+
       countryFieldIds.forEach(fieldId => {
         if (existingFormData[fieldId]) {
           console.log(`✅ Country value found for field ${fieldId}:`, existingFormData[fieldId])
@@ -1156,7 +1156,7 @@ export function DynamicCompanyWizard({
           }
         }
       })
-      
+
       // ====================================================================
       // FINAL AGGRESSIVE FIX: Ensure ALL Country fields are definitely set
       // ====================================================================
@@ -1164,18 +1164,18 @@ export function DynamicCompanyWizard({
       // If address_country exists in API response but wasn't mapped, set it now.
       // Handle ALL Country fields (Step 1 AND Step 2)
       const allCountryFieldsForFinalCheck = workflow.steps
-        .flatMap((step, stepIndex) => 
+        .flatMap((step, stepIndex) =>
           step.fields
             .filter(f => f.label?.toLowerCase().includes("country"))
             .map(field => ({ field, step, stepIndex }))
         )
-      
+
       allCountryFieldsForFinalCheck.forEach(({ field, step, stepIndex }) => {
         // Check if Country field is still empty in existingFormData
         if (!existingFormData[field.id] || existingFormData[field.id] === "") {
           const isAddressStep = stepIndex === 1 || step.name?.toLowerCase().includes("address")
           const isGeneralInfoStep = stepIndex === 0 || step.name?.toLowerCase().includes("general")
-          
+
           // For Step 2 (Addresses), ONLY use address_country (never use country from Step 1)
           if (isAddressStep) {
             if (existingRecord.address_country) {
@@ -1184,7 +1184,7 @@ export function DynamicCompanyWizard({
             } else {
               console.warn(`⚠️ FINAL FIX: Address step Country field ${field.id} is empty but address_country not found in API response`)
             }
-          } 
+          }
           // For Step 1 (General Information), ONLY use country (never use address_country)
           else if (isGeneralInfoStep) {
             if (existingRecord.country) {
@@ -1211,7 +1211,7 @@ export function DynamicCompanyWizard({
           console.log(`✅ Step ${stepIndex + 1} (${step.name}) Country field already has value in existingFormData: ${existingFormData[field.id]}`)
         }
       })
-      
+
       // Update form data with existing values
       // Use functional update to ensure we have the latest state
       // IMPORTANT: Preserve country values that were set directly from API
@@ -1220,7 +1220,7 @@ export function DynamicCompanyWizard({
           ...prevData,
           ...existingFormData,
         }
-        
+
         // CRITICAL: Preserve ALL country values that were already set directly from API
         allCountryFieldsForFinalCheck.forEach(({ field }) => {
           const alreadySetCountryValue = prevData[field.id]
@@ -1229,7 +1229,7 @@ export function DynamicCompanyWizard({
             console.log(`🛡️ PRESERVING directly set country value for ${field.id}: ${alreadySetCountryValue}`)
           }
         })
-        
+
         console.log("=== UPDATED FORM DATA ===")
         console.log("Updated form data:", updated)
         countryFieldIds.forEach(fieldId => {
@@ -1243,7 +1243,7 @@ export function DynamicCompanyWizard({
         })
         return updated
       })
-      
+
       // CRITICAL FIX: Force a second update to ensure React picks up the change
       // This handles cases where the Select component doesn't re-render with the new value
       // Use the directly extracted country value if available
@@ -1253,24 +1253,24 @@ export function DynamicCompanyWizard({
           // Only update if Country field is missing or different
           let needsUpdate = false
           const newData = { ...prevData }
-          
+
           // Get all Country fields with their step information
           const allCountryFieldsForUpdate = workflow.steps
-            .flatMap((step, stepIndex) => 
+            .flatMap((step, stepIndex) =>
               step.fields
                 .filter(f => f.label?.toLowerCase().includes("country"))
                 .map(field => ({ field, step, stepIndex }))
             )
-          
+
           allCountryFieldsForUpdate.forEach(({ field, step, stepIndex }) => {
             const currentValue = prevData[field.id]
-            
+
             // Determine the correct value for this step
             let expectedValue: string | null = null
-            
+
             // For Step 2 (Addresses), prefer address_country
-            if (stepIndex === 1 || step.name?.toLowerCase().includes("address")) {
-              expectedValue = existingRecord.address_country 
+            if (step.name?.toLowerCase().includes("address")) {
+              expectedValue = existingRecord.address_country
                 ? String(existingRecord.address_country).trim()
                 : (countryValueForAddress || existingFormData[field.id] || null)
             } else {
@@ -1279,7 +1279,7 @@ export function DynamicCompanyWizard({
                 ? String(existingRecord.country).trim()
                 : (countryValueForGeneralInfo || existingFormData[field.id] || null)
             }
-            
+
             if (expectedValue && expectedValue !== "" && currentValue !== expectedValue) {
               newData[field.id] = expectedValue
               needsUpdate = true
@@ -1292,8 +1292,8 @@ export function DynamicCompanyWizard({
                 console.log(`🔄 Force setting Step ${stepIndex + 1} (${step.name}) Country field ${field.id} from API: "${expectedValue}"`)
               } else {
                 // Use step-specific values as fallback
-                const fallbackValue = (stepIndex === 1 || step.name?.toLowerCase().includes("address")) 
-                  ? countryValueForAddress 
+                const fallbackValue = (stepIndex === 1 || step.name?.toLowerCase().includes("address"))
+                  ? countryValueForAddress
                   : countryValueForGeneralInfo
                 if (fallbackValue) {
                   newData[field.id] = fallbackValue
@@ -1303,7 +1303,7 @@ export function DynamicCompanyWizard({
               }
             }
           })
-          
+
           if (needsUpdate) {
             console.log("🔄 Force updated formData for ALL Country fields")
             return newData
@@ -1316,14 +1316,14 @@ export function DynamicCompanyWizard({
       // Addresses are stored in domain table, so they might be in the response
       // Check multiple sources: domain_tables.company_address (primary), steps structure, flat structure
       if (existingRecord && (
-        existingRecord.domain_tables?.company_address || 
-        existingRecord.steps || 
-        existingRecord.address_country || 
+        existingRecord.domain_tables?.company_address ||
+        existingRecord.steps ||
+        existingRecord.address_country ||
         existingRecord.address_line_1
       )) {
         const loadedAddresses: CompanyAddress[] = []
         const loadedAddressIds = new Set<string>() // Track loaded IDs to prevent duplicates
-        
+
         // PRIORITY 1: Check domain_tables.company_address FIRST (most reliable source for multiple addresses)
         // This is the primary source when using domain tables
         if (existingRecord.domain_tables?.company_address) {
@@ -1333,7 +1333,7 @@ export function DynamicCompanyWizard({
             isObject: typeof companyAddressData === 'object' && companyAddressData !== null,
             length: Array.isArray(companyAddressData) ? companyAddressData.length : 1
           })
-          
+
           // Handle both array and object formats
           if (Array.isArray(companyAddressData)) {
             // Multiple addresses (array format) - PRIMARY CASE
@@ -1402,17 +1402,17 @@ export function DynamicCompanyWizard({
             }
           }
         }
-        
+
         // PRIORITY 2: Check if addresses are in steps structure (alternative format, backward compatibility)
         // ALWAYS check steps structure for records array (NEW FORMAT) - this takes precedence for multiple addresses
         // Only fall back to fields object if records array doesn't exist
         if (existingRecord.steps && Array.isArray(existingRecord.steps)) {
-          const addressStep = existingRecord.steps.find((step: any) => 
-            step.name?.toLowerCase().includes("address") || 
+          const addressStep = existingRecord.steps.find((step: any) =>
+            step.name?.toLowerCase().includes("address") ||
             step.step_name?.toLowerCase().includes("address") ||
             step.order === 2 || step.step_order === 2
           )
-          
+
           if (addressStep) {
             // PRIORITY 2A: Check if step has records array (NEW FORMAT - multiple addresses)
             // This is the new format where address steps have a records array
@@ -1421,14 +1421,14 @@ export function DynamicCompanyWizard({
               // Multiple addresses from domain table (NEW FORMAT)
               console.log(`🔍 [PRIORITY 2A] Found ${addressStep.records.length} address(es) in steps[].records array (new format)`)
               console.log(`🔍 [PRIORITY 2A] Sample record structure:`, addressStep.records[0])
-              
+
               // Clear any previously loaded addresses from Priority 1 if records array exists (records array takes precedence)
               if (loadedAddresses.length > 0) {
                 console.log(`🔍 [PRIORITY 2A] Clearing ${loadedAddresses.length} previously loaded address(es) - records array takes precedence`)
                 loadedAddresses.length = 0
                 loadedAddressIds.clear()
               }
-              
+
               addressStep.records.forEach((record: any, idx: number) => {
                 const addressId = record.id || `temp-${Date.now()}-${idx}`
                 if (!loadedAddressIds.has(addressId)) {
@@ -1450,7 +1450,7 @@ export function DynamicCompanyWizard({
                     console.log(`🔍 [PRIORITY 2A] No value found for ${fieldKey}`)
                     return null
                   }
-                  
+
                   const extractedAddress = {
                     id: record.id,
                     company_id: record.company_id || companyId?.toString(),
@@ -1473,19 +1473,19 @@ export function DynamicCompanyWizard({
                     created_by: record.created_by,
                     updated_by: record.updated_by,
                   }
-                  
+
                   console.log(`🔍 [PRIORITY 2A] Extracted address ${idx + 1}:`, {
                     id: extractedAddress.id,
                     address_line_1: extractedAddress.address_line_1,
                     city: extractedAddress.city,
                     address_country: extractedAddress.address_country
                   })
-                  
+
                   loadedAddresses.push(extractedAddress)
                   loadedAddressIds.add(addressId)
                 }
               })
-              
+
               console.log(`✅ [PRIORITY 2A] Successfully loaded ${loadedAddresses.length} address(es) from steps[].records array`)
             } else if (loadedAddresses.length === 0 && addressStep.fields) {
               // PRIORITY 2B: Single address in fields structure (backward compatibility)
@@ -1497,7 +1497,7 @@ export function DynamicCompanyWizard({
                 workflow_instance_id: existingRecord.workflow_instance_id || null,
                 step_id: addressStep.step_id || addressStep.id,
               }
-              
+
               // Extract address fields from step.fields
               if (typeof addressStep.fields === 'object' && !Array.isArray(addressStep.fields)) {
                 Object.entries(addressStep.fields).forEach(([fieldName, fieldData]: [string, any]) => {
@@ -1530,7 +1530,7 @@ export function DynamicCompanyWizard({
                     }
                   }
                 })
-                
+
                 // Only add if we have at least address_line_1 and it's not a duplicate
                 if (addressData.address_line_1) {
                   const addressId = addressData.id || `temp-${Date.now()}-${Math.random()}`
@@ -1543,7 +1543,7 @@ export function DynamicCompanyWizard({
             }
           }
         }
-        
+
         // PRIORITY 3: Fallback - Check flat structure for single address (backward compatibility)
         // Only use this if no addresses were loaded from domain_tables or steps structure
         if (loadedAddresses.length === 0 && existingRecord.address_line_1) {
@@ -1571,7 +1571,7 @@ export function DynamicCompanyWizard({
             loadedAddressIds.add(addressId)
           }
         }
-        
+
         if (loadedAddresses.length > 0) {
           console.log(`✅ Setting addresses state with ${loadedAddresses.length} address(es):`, loadedAddresses.map(addr => ({
             id: addr.id,
@@ -1599,7 +1599,7 @@ export function DynamicCompanyWizard({
           return value !== undefined && value !== null && value !== ""
         })
         // For address step, also check if addresses array has data
-        const isAddressStep = stepIndex === 1 || step.name?.toLowerCase().includes("address")
+        const isAddressStep = step.name?.toLowerCase().includes("address")
         if (isAddressStep && addresses && addresses.length > 0) {
           completedStepsSet.add(stepIndex)
         } else if (stepHasData) {
@@ -1752,8 +1752,8 @@ export function DynamicCompanyWizard({
   const getCountryOptions = (): string[] => {
     if (!workflow || workflow.steps.length === 0) return []
     const generalInfoStep = workflow.steps[0]
-    const countryField = generalInfoStep?.fields?.find(f => 
-      f.label?.toLowerCase().includes("country") && 
+    const countryField = generalInfoStep?.fields?.find(f =>
+      f.label?.toLowerCase().includes("country") &&
       !f.label?.toLowerCase().includes("address")
     )
     if (countryField && countryField.options && Array.isArray(countryField.options)) {
@@ -1776,16 +1776,15 @@ export function DynamicCompanyWizard({
   const workflowInstanceId = formData.workflow_instance_id || null
 
   const currentStepData = workflow.steps[currentStep]
-  
+
   // Check if this is the address step - use AddressStepTable
-  const isAddressStep = 
-    currentStep === 1 || 
+  const isAddressStep =
     currentStepData.name?.toLowerCase().includes("address") ||
     currentStepData.name?.toLowerCase() === "addresses" ||
     currentStepData.id?.toLowerCase().includes("address")
-  
+
   // Debug logging
-  if (currentStep === 1 || currentStepData.name?.toLowerCase().includes("address")) {
+  if (currentStepData.name?.toLowerCase().includes("address")) {
     console.log("🔍 Address Step Detection:", {
       currentStep,
       stepName: currentStepData.name,
@@ -1817,12 +1816,12 @@ export function DynamicCompanyWizard({
   const progress = (validatedSteps.size / workflow.steps.length) * 100
 
   const isCurrentStepValid = () => {
-    // For address step, check if at least one address exists
-    const isAddressStep = currentStep === 1 || currentStepData.name?.toLowerCase().includes("address")
+    // Check if the current step is an address step
+    const isAddressStep = currentStepData.name?.toLowerCase().includes("address")
     if (isAddressStep) {
       return addresses && addresses.length > 0
     }
-    
+
     // For other steps, validate required fields normally
     const requiredFields = (currentStepData.fields || []).filter((field) => field.required)
     return requiredFields.every((field) => {
@@ -1834,10 +1833,10 @@ export function DynamicCompanyWizard({
 
   const validateStep = () => {
     // For address step, validate addresses array
-    const isAddressStep = currentStep === 1 || currentStepData.name?.toLowerCase().includes("address")
+    const isAddressStep = currentStepData.name?.toLowerCase().includes("address")
     if (isAddressStep) {
       const addressErrors: Record<string, string> = {}
-      
+
       if (!addresses || addresses.length === 0) {
         addressErrors["addresses_required"] = "At least one address is required"
       } else {
@@ -1860,11 +1859,11 @@ export function DynamicCompanyWizard({
           }
         })
       }
-      
+
       setErrors(addressErrors)
       return Object.keys(addressErrors).length === 0
     }
-    
+
     // For other steps, use normal validation
     const newErrors = validateStepUtil(
       currentStepData.fields || [],
@@ -1895,7 +1894,7 @@ export function DynamicCompanyWizard({
       // Build step-level payload: only current step's fields
       // company_id is generated by backend as UUID - don't send it unless we have a valid UUID
       const stepData: Record<string, any> = {}
-      
+
       // Only include company_id if we have a valid UUID value (not integer 1)
       // Backend will generate UUID if not provided
       if (currentCompany?.id) {
@@ -1912,13 +1911,13 @@ export function DynamicCompanyWizard({
         // Only include if it's a valid UUID format
         stepData.company_id = companyId as string
       }
-          // If no valid company_id, omit it - backend will generate UUID
+      // If no valid company_id, omit it - backend will generate UUID
 
       const stepFieldMap: Record<string, string> = {} // fieldId -> fieldName
-      
+
       // Check if this is the address step - format addresses from addresses state
-      const isAddressStep = currentStep === 1 || currentStepData.name?.toLowerCase().includes("address")
-      
+      const isAddressStep = currentStepData.name?.toLowerCase().includes("address")
+
       if (isAddressStep && addresses && addresses.length > 0) {
         // Format addresses as array-indexed fields for step validation
         addresses.forEach((address, index) => {
@@ -2003,14 +2002,14 @@ export function DynamicCompanyWizard({
 
           // Check if error is for an array-indexed address field
           const isArrayIndexedError = /^address_\d+_/.test(error.field_name)
-          
+
           if (isArrayIndexedError && isAddressStep && addresses && addresses.length > 0) {
             // Parse array-indexed error: address_0_city -> index 0, field "city"
             const match = error.field_name.match(/^address_(\d+)_(.+)$/)
             if (match) {
               const addressIndex = parseInt(match[1], 10)
               const baseFieldName = match[2]
-              
+
               // Map to array-indexed key for AddressStepTable
               const arrayIndexedKey = `address_${addressIndex}_${baseFieldName}`
               stepApiErrors[arrayIndexedKey] = error.error_message
@@ -2147,17 +2146,17 @@ export function DynamicCompanyWizard({
     // NOW call API validation - this is the ONLY place API validation happens
     setIsSubmitting(true)
     setIsValidating(true)
-    
+
     // Clear any previous API validation errors before new validation
     setApiValidationErrors({})
     setApiValidationErrorFields(new Set())
     setStepValidationErrors({})
-    
+
     try {
       // Prepare complete data for validation
       // company_id is generated by backend as UUID - don't send it unless we have a valid UUID
       const completeData: Record<string, any> = {}
-      
+
       // Only include company_id if we have a valid UUID value (not integer 1)
       // Backend will generate UUID if not provided
       if (currentCompany?.id) {
@@ -2175,13 +2174,13 @@ export function DynamicCompanyWizard({
         // Only include if it's a valid UUID format
         completeData.company_id = companyId
       }
-          // If no valid company_id, omit it - backend will generate UUID
+      // If no valid company_id, omit it - backend will generate UUID
 
       // Map all form data to field names
       // The API expects field_name (actual column names like "company_name", "address_line_1") as keys
       // NOT UUIDs (field.id). The field.name property contains the field_name from the backend.
       const fieldMapping: Record<string, { fieldId: string; fieldName: string; value: any; label: string }> = {}
-      
+
       // Helper function to check if a field is an address field
       const isAddressField = (fieldLabel: string): boolean => {
         const labelLower = (fieldLabel || "").toLowerCase()
@@ -2192,33 +2191,33 @@ export function DynamicCompanyWizard({
         ]
         return addressKeywords.some(keyword => labelLower.includes(keyword))
       }
-      
+
       // Helper function to check if a key is already array-indexed
       const isArrayIndexed = (key: string): boolean => {
         // Pattern: {prefix}_{digit}_{field_name}
         const pattern = /^[a-zA-Z_]+_\d+_.+$/
         return pattern.test(key)
       }
-      
+
       // First pass: Check if formData already contains array-indexed address fields
       // This handles cases where addresses are pre-formatted (e.g., from AddressStepTable component)
-      const hasArrayIndexedAddresses = Object.keys(formData).some(key => 
+      const hasArrayIndexedAddresses = Object.keys(formData).some(key =>
         isArrayIndexed(key) && key.startsWith("address_")
       )
-      
+
       // Track address fields for special handling
       const addressFieldsByIndex: Record<number, Record<string, any>> = {}
-      
+
       workflow.steps.forEach((step, stepIndex) => {
-        const isAddressStep = stepIndex === 1 || step.name?.toLowerCase().includes("address")
-        
+        const isAddressStep = step.name?.toLowerCase().includes("address")
+
         step.fields.forEach((field) => {
           const value = formData[field.id]
-          
+
           // Check if value exists (including false for checkboxes, 0 for numbers)
           // Only exclude: undefined, null, and empty strings
           const hasValue = value !== undefined && value !== null && value !== ""
-          
+
           if (!hasValue) {
             if (field.required) {
               // Log missing required fields for debugging
@@ -2232,7 +2231,7 @@ export function DynamicCompanyWizard({
                 fieldId: field.id,
                 formDataKey: field.id,
                 hasValueInFormData: formData[field.id] !== undefined,
-                allFormDataKeys: Object.keys(formData).filter(k => 
+                allFormDataKeys: Object.keys(formData).filter(k =>
                   k.toLowerCase().includes(field.label.toLowerCase().substring(0, 5)) ||
                   field.label.toLowerCase().includes(k.toLowerCase().substring(0, 5))
                 )
@@ -2240,7 +2239,7 @@ export function DynamicCompanyWizard({
             }
             return
           }
-          
+
           // Use a readable snake_case key derived from the label as the primary key
           const labelKey =
             field.label
@@ -2249,13 +2248,13 @@ export function DynamicCompanyWizard({
               .replace(/^_+|_+$/g, "") || ""
 
           const payloadKey = labelKey || field.id
-          
+
           // Check if this is an address field
           if (isAddressStep && isAddressField(field.label || "")) {
             // Check if formData already has array-indexed keys for this field
             // Look for keys like "address_0_address_line_1", "address_1_city", etc.
             let foundArrayIndexed = false
-            
+
             if (hasArrayIndexedAddresses) {
               // Find matching array-indexed key in formData
               const matchingKey = Object.keys(formData).find(k => {
@@ -2265,9 +2264,9 @@ export function DynamicCompanyWizard({
                 const fieldParts = payloadKey.split("_")
                 // Match if last parts of key match field name
                 return keyParts.slice(-fieldParts.length).join("_") === payloadKey ||
-                       k.endsWith(`_${payloadKey}`)
+                  k.endsWith(`_${payloadKey}`)
               })
-              
+
               if (matchingKey) {
                 // Use the array-indexed key directly from formData
                 completeData[matchingKey] = formData[matchingKey] || value
@@ -2278,7 +2277,7 @@ export function DynamicCompanyWizard({
                   label: field.label
                 }
                 foundArrayIndexed = true
-                
+
                 // Extract index for tracking
                 const match = matchingKey.match(/^address_(\d+)_/)
                 if (match) {
@@ -2290,7 +2289,7 @@ export function DynamicCompanyWizard({
                 }
               }
             }
-            
+
             if (!foundArrayIndexed) {
               // Single address (backward compatibility) - treat as index 0
               // Format as array-indexed for consistency (address_0_*)
@@ -2302,7 +2301,7 @@ export function DynamicCompanyWizard({
                 value: value,
                 label: field.label
               }
-              
+
               if (!addressFieldsByIndex[0]) {
                 addressFieldsByIndex[0] = {}
               }
@@ -2320,7 +2319,7 @@ export function DynamicCompanyWizard({
           }
         })
       })
-      
+
       // NEW: Format addresses from addresses state array (from AddressStepTable)
       // This is the primary source for multiple addresses
       // CRITICAL: Always send ALL addresses, even if some fields are empty
@@ -2335,7 +2334,7 @@ export function DynamicCompanyWizard({
             pincode: address.pincode,
             address_country: address.address_country
           })
-          
+
           // NEW: Include address ID if available (for ID-based updates in PUT API)
           // If address has ID, include it so backend can update existing address
           // If no ID, backend will treat as new address (insert)
@@ -2345,7 +2344,7 @@ export function DynamicCompanyWizard({
           } else {
             console.log(`ℹ️ Address ${index} has no ID or temp ID, will be inserted as new`)
           }
-          
+
           // Format each address field as array-indexed
           // IMPORTANT: Send ALL fields, even if empty, to ensure backend receives complete data
           completeData[`address_${index}_address_line_1`] = address.address_line_1 || ""
@@ -2359,7 +2358,7 @@ export function DynamicCompanyWizard({
           completeData[`address_${index}_document`] = address.document !== undefined ? address.document : false
           completeData[`address_${index}_pay`] = address.pay !== undefined ? address.pay : false
           completeData[`address_${index}_visit`] = address.visit !== undefined ? address.visit : false
-          
+
           // Track for logging
           if (!addressFieldsByIndex[index]) {
             addressFieldsByIndex[index] = {}
@@ -2372,7 +2371,7 @@ export function DynamicCompanyWizard({
         })
         console.log(`📮 Formatted ${addresses.length} address(es) from AddressStepTable component`)
       }
-      
+
       // Also include any array-indexed address fields that might be in formData but not in workflow fields
       // This handles cases where addresses are added dynamically (backward compatibility)
       if (hasArrayIndexedAddresses) {
@@ -2392,13 +2391,13 @@ export function DynamicCompanyWizard({
           }
         })
       }
-      
+
       // Log address detection for debugging
       if (Object.keys(addressFieldsByIndex).length > 0) {
-        console.log(`📮 Detected ${Object.keys(addressFieldsByIndex).length} address(es) to send:`, 
+        console.log(`📮 Detected ${Object.keys(addressFieldsByIndex).length} address(es) to send:`,
           Object.keys(addressFieldsByIndex).map(idx => `Address ${idx}: ${Object.keys(addressFieldsByIndex[parseInt(idx)]).length} fields`))
       }
-      
+
       // Log field mappings for debugging
       console.log("🔍 Field Value Mapping:", {
         totalMapped: Object.keys(fieldMapping).length,
@@ -2414,13 +2413,13 @@ export function DynamicCompanyWizard({
       const payloadKeys = Object.keys(completeData).filter(k => k !== "company_id")
       const uuidKeys = payloadKeys.filter(k => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k))
       const fieldNameKeys = payloadKeys.filter(k => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k))
-      
+
       // Check for "Accepted Payment Methods" field specifically
-      const paymentMethodsKey = payloadKeys.find(k => 
-        k.toLowerCase().includes('payment') && 
+      const paymentMethodsKey = payloadKeys.find(k =>
+        k.toLowerCase().includes('payment') &&
         (k.toLowerCase().includes('method') || k.toLowerCase().includes('accepted'))
       )
-      
+
       console.log("📦 Payload Structure:", {
         totalFields: payloadKeys.length,
         fieldNameKeys: fieldNameKeys.length,
@@ -2433,9 +2432,9 @@ export function DynamicCompanyWizard({
         } : "NOT FOUND in payload",
         warning: uuidKeys.length > 0 ? "⚠️ Some fields still using UUIDs - check field.name mapping" : "✅ All fields using field names"
       })
-      
+
       // Log full payload for debugging (truncated)
-      console.log("📋 Full Payload (first 20 fields):", 
+      console.log("📋 Full Payload (first 20 fields):",
         Object.entries(completeData).slice(0, 20).reduce((acc, [key, value]) => {
           acc[key] = value
           return acc
@@ -2450,7 +2449,7 @@ export function DynamicCompanyWizard({
         completeData,
         Boolean(recordId)
       )
-      
+
       console.log("📥 API Validation Response:", {
         isValid: finalValidation.is_valid,
         totalErrors: finalValidation.errors.length,
@@ -2473,7 +2472,7 @@ export function DynamicCompanyWizard({
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, "_")
             .replace(/^_+|_+$/g, "")
-          
+
           // Search through all workflow steps to find matching field
           workflow.steps.forEach((step, stepIndex) => {
             step.fields.forEach((field) => {
@@ -2486,25 +2485,25 @@ export function DynamicCompanyWizard({
                 ?.toLowerCase()
                 .replace(/[^a-z0-9]+/g, "_")
                 .replace(/^_+|_+$/g, "") || ""
-              
+
               // Match by priority:
               // 1. Direct field.name match (most reliable - exact field_name from backend)
               // 2. Normalized field.name match (snake_case comparison)
               // 3. Field label (snake_case of label)
               // 4. Field ID (UUID) - fallback
               // 5. Exact label match
-              const matches = 
+              const matches =
                 error.field_name === fieldName || // Exact match with field.name
                 errorFieldName === fieldNameSnake || // Normalized match with field.name
                 errorFieldName === fieldLabelSnake || // Match with label
                 error.field_name === field.id || // Match with UUID (fallback)
                 error.field_label === field.label || // Exact label match
                 error.field_name.toLowerCase() === field.label?.toLowerCase() // Case-insensitive label match
-              
+
               if (matches) {
                 apiErrors[field.id] = error.error_message
                 errorFieldIds.add(field.id)
-                
+
                 // Track which step has errors
                 if (!stepErrors[stepIndex]) {
                   stepErrors[stepIndex] = []
@@ -2546,7 +2545,7 @@ export function DynamicCompanyWizard({
 
       // All validations passed, now submit to API
       console.log("All validations passed, submitting to API...")
-      
+
       let result: Record<string, any>
       if (recordId) {
         result = await dynamicWorkflowAPI.updateTableRecord(workflowId, recordId, completeData)
@@ -2568,7 +2567,7 @@ export function DynamicCompanyWizard({
     } catch (error: any) {
       // Enhanced error logging with safe serialization
       console.error("Final submission error - Raw error:", error)
-      
+
       // Helper to safely extract error info
       const getErrorInfo = (err: any): any => {
         if (!err) return null
@@ -2593,18 +2592,18 @@ export function DynamicCompanyWizard({
           return { error: "Could not serialize error", originalError: String(err) }
         }
       }
-      
+
       const errorInfo = getErrorInfo(error)
       console.error("Final submission error - Parsed:", errorInfo)
-      
+
       // Extract error message from various possible structures
       let errorMessage = "Failed to create company. Please try again."
-      
+
       if (error) {
         // Priority 1: Check ApiError message (from http-client)
         if (error.message && typeof error.message === "string") {
           errorMessage = error.message
-        } 
+        }
         // Priority 2: Check Axios response data.detail
         else if (error.response?.data?.detail) {
           const detail = error.response.data.detail
@@ -2641,7 +2640,7 @@ export function DynamicCompanyWizard({
           }
         }
       }
-      
+
       toast({
         title: "Submission Failed",
         description: errorMessage,
@@ -2656,17 +2655,17 @@ export function DynamicCompanyWizard({
   // Helper function to update form data and clear API errors for that field
   const updateFormData = (fieldId: string, value: any) => {
     setFormData({ ...formData, [fieldId]: value })
-    
+
     // Clear API validation error for this field if user is fixing it
     if (apiValidationErrors[fieldId]) {
       const updatedApiErrors = { ...apiValidationErrors }
       delete updatedApiErrors[fieldId]
       setApiValidationErrors(updatedApiErrors)
-      
+
       const updatedErrorFields = new Set(apiValidationErrorFields)
       updatedErrorFields.delete(fieldId)
       setApiValidationErrorFields(updatedErrorFields)
-      
+
       // Also clear from step errors if this field's error is resolved
       if (workflow) {
         workflow.steps.forEach((step, stepIndex) => {
@@ -2749,13 +2748,13 @@ export function DynamicCompanyWizard({
          * 
          * ====================================================================
          */
-        
+
         // Ensure value matches one of the options (case-insensitive, trimmed)
         let selectValue = value || ""
-        
+
         // Debug Country field specifically
         const isCountryField = field.label?.toLowerCase().includes("country")
-                
+
         if (selectValue && field.options && field.options.length > 0) {
           // Try to find exact match first
           const exactMatch = field.options.find(opt => opt === selectValue)
@@ -2765,7 +2764,7 @@ export function DynamicCompanyWizard({
             }
           } else {
             // Try case-insensitive match
-            const caseInsensitiveMatch = field.options.find(opt => 
+            const caseInsensitiveMatch = field.options.find(opt =>
               String(opt).toLowerCase().trim() === String(selectValue).toLowerCase().trim()
             )
             if (caseInsensitiveMatch) {
@@ -2786,7 +2785,7 @@ export function DynamicCompanyWizard({
                 console.error(`   Available options:`, field.options)
                 console.error(`   Value type:`, typeof selectValue)
                 // Try to find partial match
-                const partialMatch = field.options.find(opt => 
+                const partialMatch = field.options.find(opt =>
                   String(opt).toLowerCase().includes(String(selectValue).toLowerCase()) ||
                   String(selectValue).toLowerCase().includes(String(opt).toLowerCase())
                 )
@@ -2799,13 +2798,13 @@ export function DynamicCompanyWizard({
             }
           }
         }
-        
+
         // Use key prop to force re-render when value changes (important for controlled components)
         const selectKey = `${field.id}-${selectValue || 'empty'}`
         return (
-          <Select 
+          <Select
             key={selectKey}
-            value={selectValue} 
+            value={selectValue}
             onValueChange={(val) => {
               console.log(`Select value changed for ${field.label}:`, val)
               updateFormData(field.id, val)
@@ -3054,7 +3053,7 @@ export function DynamicCompanyWizard({
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium">Tab View Mode</span>
                 <span className="text-muted-foreground">
-                {validatedSteps.size} of {workflow.steps.length} steps validated
+                  {validatedSteps.size} of {workflow.steps.length} steps validated
                 </span>
               </div>
               <Progress value={progress} className="h-2" />
@@ -3069,13 +3068,12 @@ export function DynamicCompanyWizard({
               <TabsTrigger
                 key={step.id}
                 value={index.toString()}
-                  className={`gap-2 ${
-                  validatedSteps.has(index) && !stepValidationErrors[index]
-                    ? "bg-green-50 text-green-700 data-[state=active]:bg-green-100"
-                    : stepValidationErrors[index]
-                      ? "bg-red-50 text-red-700 data-[state=active]:bg-red-100 border-2 border-red-300"
-                      : ""
-                }`}
+                className={`gap-2 ${validatedSteps.has(index) && !stepValidationErrors[index]
+                  ? "bg-green-50 text-green-700 data-[state=active]:bg-green-100"
+                  : stepValidationErrors[index]
+                    ? "bg-red-50 text-red-700 data-[state=active]:bg-red-100 border-2 border-red-300"
+                    : ""
+                  }`}
               >
                 {validatedSteps.has(index) && !stepValidationErrors[index] && <Check className="h-3 w-3" />}
                 {stepValidationErrors[index] && <AlertCircle className="h-3 w-3" />}
@@ -3122,7 +3120,7 @@ export function DynamicCompanyWizard({
                     </div>
 
                     {/* Check if this is the address step - use AddressStepTable */}
-                    {(index === 1 || step.name?.toLowerCase().includes("address")) ? (
+                    {(step.name?.toLowerCase().includes("address")) ? (
                       <>
                         {console.log(`🔍 [Tabs View] Rendering AddressStepTable for step ${index} with ${addresses.length} address(es)`, addresses.map(addr => ({
                           id: addr.id,
@@ -3183,7 +3181,7 @@ export function DynamicCompanyWizard({
                     ? "This step has been validated. You can edit and revalidate if needed."
                     : stepValidationErrors[index]
                       ? `Please fix ${stepValidationErrors[index].length} error(s) before validating.`
-                    : "Complete all required fields and validate this step."}
+                      : "Complete all required fields and validate this step."}
                 </div>
                 <Button
                   onClick={handleStepSubmit}
@@ -3262,17 +3260,16 @@ export function DynamicCompanyWizard({
               {workflow.steps.map((step, index) => (
                 <div
                   key={step.id}
-                  className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
-                    index === currentStep
-                      ? "bg-blue-600 text-white"
-                      : validatedSteps.has(index) && !stepValidationErrors[index]
-                        ? "bg-green-100 text-green-700"
-                        : stepValidationErrors[index]
-                          ? "bg-red-100 text-red-700 border-2 border-red-300"
-                          : index < currentStep
-                            ? "bg-gray-200 text-gray-600"
-                        : "bg-gray-100 text-gray-600"
-                  }`}
+                  className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs ${index === currentStep
+                    ? "bg-blue-600 text-white"
+                    : validatedSteps.has(index) && !stepValidationErrors[index]
+                      ? "bg-green-100 text-green-700"
+                      : stepValidationErrors[index]
+                        ? "bg-red-100 text-red-700 border-2 border-red-300"
+                        : index < currentStep
+                          ? "bg-gray-200 text-gray-600"
+                          : "bg-gray-100 text-gray-600"
+                    }`}
                 >
                   {validatedSteps.has(index) && !stepValidationErrors[index] && <Check className="h-3 w-3" />}
                   {stepValidationErrors[index] && <AlertCircle className="h-3 w-3" />}
@@ -3358,32 +3355,34 @@ export function DynamicCompanyWizard({
       </Card>
 
       {/* Show API validation errors summary if any */}
-      {apiValidationErrorFields.size > 0 && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-6">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
-              <div className="flex-1">
-                <h4 className="text-sm font-semibold text-red-800 mb-2">
-                  {apiValidationErrorFields.size} field(s) need to be fixed before submission
-                </h4>
-                <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
-                  {Object.entries(apiValidationErrors).map(([fieldId, errorMsg]) => {
-                    const field = workflow.steps
-                      .flatMap((s) => s.fields || [])
-                      .find((f) => f.id === fieldId)
-                    return (
-                      <li key={fieldId}>
-                        <strong>{field?.label || fieldId}:</strong> {errorMsg}
-                      </li>
-                    )
-                  })}
-                </ul>
+      {
+        apiValidationErrorFields.size > 0 && (
+          <Card className="border-red-200 bg-red-50">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-red-800 mb-2">
+                    {apiValidationErrorFields.size} field(s) need to be fixed before submission
+                  </h4>
+                  <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+                    {Object.entries(apiValidationErrors).map(([fieldId, errorMsg]) => {
+                      const field = workflow.steps
+                        .flatMap((s) => s.fields || [])
+                        .find((f) => f.id === fieldId)
+                      return (
+                        <li key={fieldId}>
+                          <strong>{field?.label || fieldId}:</strong> {errorMsg}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        )
+      }
 
       {/* Navigation */}
       <div className="flex flex-col sm:flex-row gap-3 justify-between">
@@ -3408,17 +3407,17 @@ export function DynamicCompanyWizard({
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 {isValidating ? "Validating..." : "Submitting..."}
-            </>
-          ) : (
-            <>
+              </>
+            ) : (
+              <>
                 <Check className="mr-2 h-4 w-4" />
                 Submit All Steps
                 {apiValidationErrorFields.size > 0 && ` (${apiValidationErrorFields.size} errors)`}
-            </>
-          )}
-        </Button>
+              </>
+            )}
+          </Button>
         </div>
       </div>
-    </div>
+    </div >
   )
 }
